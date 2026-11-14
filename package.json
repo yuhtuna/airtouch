@@ -7,12 +7,12 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "firmware:compile": "arduino-cli compile --fqbn arduino:avr:nano:cpu=atmega328 firmware/airtouch_firmware",
-    "firmware:compile:old": "arduino-cli compile --fqbn arduino:avr:nano:cpu=atmega328old firmware/airtouch_firmware",
-    "firmware:upload": "arduino-cli upload --fqbn arduino:avr:nano:cpu=atmega328 firmware/airtouch_firmware",
-    "firmware:upload:old": "arduino-cli upload --fqbn arduino:avr:nano:cpu=atmega328old firmware/airtouch_firmware",
-    "firmware:flash": "arduino-cli compile --upload --fqbn arduino:avr:nano:cpu=atmega328 firmware/airtouch_firmware",
-    "firmware:flash:old": "arduino-cli compile --upload --fqbn arduino:avr:nano:cpu=atmega328old firmware/airtouch_firmware",
+    "firmware:compile": "arduino-cli compile --fqbn arduino:avr:nano:cpu=atmega328old firmware/airtouch_firmware",
+    "firmware:compile:new": "arduino-cli compile --fqbn arduino:avr:nano:cpu=atmega328 firmware/airtouch_firmware",
+    "firmware:upload": "arduino-cli upload --fqbn arduino:avr:nano:cpu=atmega328old firmware/airtouch_firmware",
+    "firmware:upload:new": "arduino-cli upload --fqbn arduino:avr:nano:cpu=atmega328 firmware/airtouch_firmware",
+    "firmware:flash": "arduino-cli compile --upload --fqbn arduino:avr:nano:cpu=atmega328old firmware/airtouch_firmware",
+    "firmware:flash:new": "arduino-cli compile --upload --fqbn arduino:avr:nano:cpu=atmega328 firmware/airtouch_firmware",
     "firmware:boards": "arduino-cli board list"
   },
   "dependencies": {

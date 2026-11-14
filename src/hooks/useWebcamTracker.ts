@@ -103,8 +103,11 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
             const g = data[i + 1];
             const b = data[i + 2];
 
-            // Optical filter: High Cyan/White intensity: (G + B) > 340 and low Red compared to cyan
-            if ((g + b) > 340 && (g + b) - (r * 1.6) > 80) {
+            // Robust Blue & Cyan Optical Beacon Filter:
+            // Catches pure blue LEDs (b > 130, b > r, b >= g * 0.8), electric cyan beacons, and overexposed glowing cores
+            const isBlue = (b > 130 && (b - r) > 30 && b >= g * 0.8);
+            const isCyanOrWhiteCore = ((g + b) > 300 && (g + b) - (r * 1.4) > 40);
+            if (isBlue || isCyanOrWhiteCore) {
               const pixelIndex = i / 4;
               const px = pixelIndex % canvas.width;
               const py = Math.floor(pixelIndex / canvas.width);

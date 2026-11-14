@@ -165,10 +165,10 @@ void setup() {
   pinMode(PIN_HAPTIC, OUTPUT);
   analogWrite(PIN_HAPTIC, 0);
 
-  // Initialize Beacon LED (Default bright cyan for 60 FPS webcam tracking)
+  // Initialize Beacon LED (Default bright electric blue for 60 FPS webcam tracking)
   beacon.begin();
   beacon.setBrightness(255);
-  beacon.setPixelColor(0, beacon.Color(0, 255, 255)); // Bright Cyan beacon
+  beacon.setPixelColor(0, beacon.Color(0, 140, 255)); // Bright Electric Blue beacon
   beacon.show();
 
   // Initialize Hardware I2C (A4 = SDA, A5 = SCL on ATmega328P) at 400kHz fast mode
@@ -198,8 +198,8 @@ void setup() {
   delay(70);
   analogWrite(PIN_HAPTIC, 0);
 
-  // Initial beacon back to bright cyan
-  beacon.setPixelColor(0, beacon.Color(0, 255, 255));
+  // Initial beacon back to bright electric blue
+  beacon.setPixelColor(0, beacon.Color(0, 140, 255));
   beacon.show();
 
   lastImuTime = micros();
