@@ -15,7 +15,28 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
   const animIdRef = useRef<number | null>(null);
   const filterRef = useRef(new OneEuroFilter3D(1.2, 0.02, 1.0));
 
+  const stopTracker = useCallback(() => {
+    if (animIdRef.current) {
+      cancelAnimationFrame(animIdRef.current);
+      animIdRef.current = null;
+    }
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach((track) => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    setActive(false);
+    setTrackingConfidence(0);
+    onLog('Webcam Optical Tracker stopped.');
+  }, [onLog]);
+
   const startTracker = useCallback(async () => {
+    // 1. Guard against unsupported or non-secure contexts (e.g. HTTP on local network)
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      onLog('Webcam Optical Tracker unavailable: secure context (HTTPS / localhost) required.');
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -24,6 +45,15 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
           frameRate: { ideal: 60, min: 30 },
         },
       });
+
+      // Handle unexpected stream termination (e.g. hardware unplug, OS revocation)
+      const track = stream.getVideoTracks()[0];
+      if (track) {
+        track.addEventListener('ended', () => {
+          onLog('Webcam video stream terminated.');
+          stopTracker();
+        });
+      }
 
       if (!videoRef.current) {
         const video = document.createElement('video');
@@ -155,24 +185,16 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
 
       animIdRef.current = requestAnimationFrame(processFrame);
     } catch (err: any) {
-      onLog(`Webcam error: ${err.message}`);
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        onLog('Webcam access denied. Please grant camera permission in browser.');
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        onLog('No camera hardware found on this system.');
+      } else {
+        onLog(`Webcam error: ${err.message}`);
+      }
+      stopTracker();
     }
-  }, [onPositionUpdate, onLog]);
-
-  const stopTracker = useCallback(() => {
-    if (animIdRef.current) {
-      cancelAnimationFrame(animIdRef.current);
-      animIdRef.current = null;
-    }
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach((track) => track.stop());
-      videoRef.current.srcObject = null;
-    }
-    setActive(false);
-    setTrackingConfidence(0);
-    onLog('Webcam Optical Tracker stopped.');
-  }, [onLog]);
+  }, [onPositionUpdate, onLog, stopTracker]);
 
   useEffect(() => {
     return () => {

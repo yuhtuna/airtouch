@@ -33,6 +33,8 @@ export default function App() {
   const wandPosRef = useRef<[number, number, number]>([0, 0, 0]);
   const wandRotRef = useRef<[number, number, number]>([0, 0, 0]);
   const wandTipPosRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 0, 0.68));
+  const lastOpticalPosRef = useRef<[number, number, number] | null>(null);
+  const opticalConfidenceRef = useRef(0);
 
   // Telemetry HUD state
   const [telemetry, setTelemetry] = useState<WandTelemetry>({
@@ -71,17 +73,27 @@ export default function App() {
       // 1. Update orientation [pitch, yaw, roll]
       wandRotRef.current = [data.pitch, data.yaw, data.roll];
 
-      // 2. Optical tracking fallback: IMU laser pointer raycaster when webcam is off
-      if (!trackerActive) {
-        const radYaw = (data.yaw * Math.PI) / 180;
-        const radPitch = (data.pitch * Math.PI) / 180;
-        const rayDistance = 2.8;
-        wandPosRef.current = [
-          Math.sin(radYaw) * rayDistance,
-          -Math.sin(radPitch) * rayDistance + 0.3,
-          -Math.cos(radYaw) * Math.cos(radPitch) * rayDistance + 2.2,
-        ];
-      }
+      // 2. Confidence-aware Sensor Fusion: Optical Tracking + IMU Raycaster Fallback
+      const radYaw = (data.yaw * Math.PI) / 180;
+      const radPitch = (data.pitch * Math.PI) / 180;
+      const rayDistance = 2.8;
+      const imuRayPos: [number, number, number] = [
+        Math.sin(radYaw) * rayDistance,
+        -Math.sin(radPitch) * rayDistance + 0.3,
+        -Math.cos(radYaw) * Math.cos(radPitch) * rayDistance + 2.2,
+      ];
+
+      const isOpticalValid = trackerActive && opticalConfidenceRef.current > 30 && lastOpticalPosRef.current !== null;
+      const targetPos = isOpticalValid ? lastOpticalPosRef.current! : imuRayPos;
+
+      // Smooth spatial blending to eliminate jumps when transitioning between optical and IMU
+      const current = wandPosRef.current;
+      const blendFactor = isOpticalValid ? 0.35 : 0.2;
+      wandPosRef.current = [
+        current[0] + (targetPos[0] - current[0]) * blendFactor,
+        current[1] + (targetPos[1] - current[1]) * blendFactor,
+        current[2] + (targetPos[2] - current[2]) * blendFactor,
+      ];
 
       // 3. True 3D Wand Tip Kinematics (Rotated offset)
       const targetEuler = new THREE.Euler(
@@ -184,18 +196,36 @@ export default function App() {
     stopTracker,
   } = useWebcamTracker({
     onPositionUpdate: (pos) => {
-      wandPosRef.current = pos;
-      const targetEuler = new THREE.Euler(
-        (wandRotRef.current[0] * Math.PI) / 180,
-        (wandRotRef.current[1] * Math.PI) / 180,
-        (wandRotRef.current[2] * Math.PI) / 180,
-        'YXZ'
-      );
-      const tipOffset = new THREE.Vector3(0, 0, 0.68).applyEuler(targetEuler);
-      wandTipPosRef.current.set(pos[0] + tipOffset.x, pos[1] + tipOffset.y, pos[2] + tipOffset.z);
+      lastOpticalPosRef.current = pos;
+      if (!connected) {
+        // When not connected to hardware, drive wand motion smoothly via webcam
+        const current = wandPosRef.current;
+        wandPosRef.current = [
+          current[0] + (pos[0] - current[0]) * 0.35,
+          current[1] + (pos[1] - current[1]) * 0.35,
+          current[2] + (pos[2] - current[2]) * 0.35,
+        ];
+        const targetEuler = new THREE.Euler(
+          (wandRotRef.current[0] * Math.PI) / 180,
+          (wandRotRef.current[1] * Math.PI) / 180,
+          (wandRotRef.current[2] * Math.PI) / 180,
+          'YXZ'
+        );
+        const tipOffset = new THREE.Vector3(0, 0, 0.68).applyEuler(targetEuler);
+        wandTipPosRef.current.set(
+          wandPosRef.current[0] + tipOffset.x,
+          wandPosRef.current[1] + tipOffset.y,
+          wandPosRef.current[2] + tipOffset.z
+        );
+      }
     },
     onLog: addLog,
   });
+
+  // Keep optical confidence ref synced for zero-latency frame access
+  useEffect(() => {
+    opticalConfidenceRef.current = trackingConfidence;
+  }, [trackingConfidence]);
 
   // Export STL
   const handleExportSTL = useCallback(() => {
@@ -272,7 +302,8 @@ export default function App() {
 
       wandRotRef.current = [simPitch, simYaw, simRoll];
 
-      if (!trackerActive) {
+      const isOpticalValid = trackerActive && trackingConfidence > 30 && lastOpticalPosRef.current !== null;
+      if (!isOpticalValid) {
         wandPosRef.current = [
           Math.sin(time * 0.7) * 1.4,
           Math.cos(time * 0.9) * 0.5 + 0.2,
@@ -324,8 +355,8 @@ export default function App() {
   // Primary trigger: physical hardware button OR browser click-to-trigger
   const isTriggerHeld = telemetry.btn === 1 || manualTriggerHeld;
 
-  // Tracking Source Calculation
-  const trackingSource: TrackingSource = trackerActive
+  // Tracking Source Calculation with Confidence Model
+  const trackingSource: TrackingSource = (trackerActive && trackingConfidence > 30)
     ? 'WEBCAM'
     : connected
     ? 'IMU_RAYCASTER'

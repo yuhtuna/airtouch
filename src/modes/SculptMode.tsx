@@ -67,6 +67,7 @@ export const SculptMode: React.FC<SculptModeProps> = ({
   triggerHaptic,
 }) => {
   const [activePoints, setActivePoints] = useState<StrokePoint[]>([]);
+  const activePointsRef = useRef<StrokePoint[]>([]);
   const lastPosRef = useRef<THREE.Vector3 | null>(null);
   const wasDrawingRef = useRef(false);
   const hapticTimerRef = useRef(0);
@@ -93,7 +94,8 @@ export const SculptMode: React.FC<SculptModeProps> = ({
             color: '#38bdf8',
           };
           lastPosRef.current = tipPos.clone();
-          setActivePoints((prev) => [...prev, newPt]);
+          activePointsRef.current.push(newPt);
+          setActivePoints([...activePointsRef.current]);
         }
         wasDrawingRef.current = true;
       } else if (tool === 'ERASE') {
@@ -107,13 +109,15 @@ export const SculptMode: React.FC<SculptModeProps> = ({
       }
     } else {
       if (wasDrawingRef.current) {
-        // Finalize active stroke into permanent list
-        if (activePoints.length >= 3) {
+        // Finalize active stroke synchronously from mutable Ref to avoid closure staleness
+        const completedPoints = [...activePointsRef.current];
+        if (completedPoints.length >= 3) {
           onAddCompletedStroke({
             id: Math.random().toString(36).substring(2, 9),
-            points: [...activePoints],
+            points: completedPoints,
           });
         }
+        activePointsRef.current = [];
         setActivePoints([]);
         lastPosRef.current = null;
         wasDrawingRef.current = false;

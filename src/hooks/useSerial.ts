@@ -2,13 +2,16 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { WandTelemetry } from '../types/telemetry';
 import { parseTelemetryLine } from '../lib/serialProtocol';
 
+export type ConnectionStatus = 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'DISCONNECTING';
+
 interface UseSerialProps {
   onTelemetry: (data: WandTelemetry) => void;
   onLog: (msg: string) => void;
 }
 
 export function useSerial({ onTelemetry, onLog }: UseSerialProps) {
-  const [connected, setConnected] = useState(false);
+  const [status, setStatus] = useState<ConnectionStatus>('DISCONNECTED');
+  const isTransitioningRef = useRef(false);
   const portRef = useRef<any>(null);
   const readerRef = useRef<ReadableStreamDefaultReader<string> | null>(null);
   const writerRef = useRef<WritableStreamDefaultWriter<string> | null>(null);
@@ -17,48 +20,51 @@ export function useSerial({ onTelemetry, onLog }: UseSerialProps) {
   const lastWriteTimeRef = useRef(0);
 
   const disconnect = useCallback(async () => {
+    if (isTransitioningRef.current) return;
+    isTransitioningRef.current = true;
+    setStatus('DISCONNECTING');
+
+    const port = portRef.current;
+    portRef.current = null; // Detach reference to prevent re-entrant calls
+
     if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
+      try {
+        abortControllerRef.current.abort();
+      } catch (e) {}
       abortControllerRef.current = null;
     }
 
     if (readerRef.current) {
       try {
         await readerRef.current.cancel();
-      } catch (err) {
-        // Stream cancel catch
-      }
+      } catch (err) {}
       readerRef.current = null;
     }
 
     if (readingPromiseRef.current) {
       try {
         await readingPromiseRef.current;
-      } catch (err) {
-        // Ignore read loop termination
-      }
+      } catch (err) {}
       readingPromiseRef.current = null;
     }
 
     if (writerRef.current) {
       try {
         await writerRef.current.close();
-      } catch (err) {
-        // Writer close catch
-      }
+      } catch (err) {}
       writerRef.current = null;
     }
 
-    if (portRef.current) {
+    if (port) {
       try {
-        await portRef.current.close();
+        await port.close();
       } catch (err: any) {
         console.warn('Disconnect port close:', err);
       }
-      portRef.current = null;
     }
 
-    setConnected(false);
+    setStatus('DISCONNECTED');
+    isTransitioningRef.current = false;
     onLog('AirTouch disconnected.');
   }, [onLog]);
 
@@ -80,17 +86,20 @@ export function useSerial({ onTelemetry, onLog }: UseSerialProps) {
   }, [disconnect, onLog]);
 
   const connect = useCallback(async () => {
+    if (isTransitioningRef.current || portRef.current) return;
+
     if (!('serial' in navigator)) {
       alert('Web Serial API is not supported in this browser. Please use Chrome or Edge.');
       return;
     }
 
+    isTransitioningRef.current = true;
+    setStatus('CONNECTING');
+
     try {
       const port = await (navigator as any).serial.requestPort();
       await port.open({ baudRate: 115200 });
       portRef.current = port;
-      setConnected(true);
-      onLog('Connected to AirTouch ESP32-S3 (115200 baud).');
 
       abortControllerRef.current = new AbortController();
       const signal = abortControllerRef.current.signal;
@@ -105,6 +114,9 @@ export function useSerial({ onTelemetry, onLog }: UseSerialProps) {
       port.readable.pipeTo(textDecoder.writable, { signal }).catch(() => {});
       const reader = textDecoder.readable.getReader();
       readerRef.current = reader;
+
+      setStatus('CONNECTED');
+      onLog('Connected to AirTouch ESP32-S3 (115200 baud).');
 
       const readLoop = async () => {
         let buffer = '';
@@ -130,19 +142,22 @@ export function useSerial({ onTelemetry, onLog }: UseSerialProps) {
         } finally {
           try {
             reader.releaseLock();
-          } catch (e) {
-            // ignore
-          }
+          } catch (e) {}
           readerRef.current = null;
         }
       };
 
       readingPromiseRef.current = readLoop();
     } catch (err: any) {
-      if (err.name !== 'NotFoundError') {
-        onLog(`Serial error: ${err.message}`);
+      if (err.name === 'NotFoundError') {
+        // User dismissed native port prompt — cleanly restore disconnected state
+        setStatus('DISCONNECTED');
+      } else {
+        onLog(`Serial connection error: ${err.message}`);
+        await disconnect();
       }
-      disconnect();
+    } finally {
+      isTransitioningRef.current = false;
     }
   }, [onTelemetry, onLog, disconnect]);
 
@@ -162,5 +177,7 @@ export function useSerial({ onTelemetry, onLog }: UseSerialProps) {
     }
   }, []);
 
-  return { connected, connect, disconnect, sendCommand };
+  const connected = status === 'CONNECTED';
+
+  return { connected, status, connect, disconnect, sendCommand };
 }
