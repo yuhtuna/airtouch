@@ -50,7 +50,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             <div className="flex items-center gap-2">
               <span className="font-bold text-base tracking-tight text-white">AirTouch</span>
               <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/30">
-                ESP32-S3 SENSE
+                ARDUINO NANO
               </span>
             </div>
           </div>

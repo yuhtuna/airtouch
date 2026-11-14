@@ -46,18 +46,28 @@ export const Wand3D = React.forwardRef<THREE.Group, Wand3DProps>(
           />
         </mesh>
 
-        {/* Xiao ESP32S3 Module Shell */}
-        <mesh position={[0, 0.1, -0.1]} rotation={[0, 0, 0]}>
-          <boxGeometry args={[0.22, 0.08, 0.38]} />
+        {/* Arduino Nano Module Shell (Classic Blue PCB + Microcontroller package) */}
+        <mesh position={[0, 0.09, -0.05]} rotation={[0, 0, 0]}>
+          <boxGeometry args={[0.2, 0.05, 0.52]} />
           <meshStandardMaterial
-            color="#334155"
-            metalness={0.8}
-            roughness={0.3}
+            color="#0284c7"
+            metalness={0.6}
+            roughness={0.35}
           />
         </mesh>
 
-        {/* Illuminated Pushbutton Switch (D0) */}
-        <mesh position={[0, 0.13, 0.2]}>
+        {/* ATmega328P IC Package */}
+        <mesh position={[0, 0.125, -0.05]} rotation={[0, Math.PI / 4, 0]}>
+          <boxGeometry args={[0.1, 0.03, 0.1]} />
+          <meshStandardMaterial
+            color="#0f172a"
+            metalness={0.8}
+            roughness={0.2}
+          />
+        </mesh>
+
+        {/* Illuminated Pushbutton Switch (Pin 2) */}
+        <mesh position={[0, 0.13, 0.28]}>
           <cylinderGeometry args={[0.045, 0.045, 0.04, 16]} />
           <meshStandardMaterial
             color={isPressed ? '#ef4444' : '#64748b'}
@@ -67,7 +77,7 @@ export const Wand3D = React.forwardRef<THREE.Group, Wand3DProps>(
           />
         </mesh>
 
-        {/* Diffused Optical Tracking Beacon (12mm tip at D3) */}
+        {/* Diffused Optical Tracking Beacon (12mm tip at Pin 3) */}
         <mesh position={[0, 0, 0.68]}>
           <sphereGeometry args={[0.11, 24, 24]} />
           <meshStandardMaterial

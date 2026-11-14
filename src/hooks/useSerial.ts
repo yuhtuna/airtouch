@@ -116,7 +116,7 @@ export function useSerial({ onTelemetry, onLog }: UseSerialProps) {
       readerRef.current = reader;
 
       setStatus('CONNECTED');
-      onLog('Connected to AirTouch ESP32-S3 (115200 baud).');
+      onLog('Connected to AirTouch Arduino Nano (115200 baud).');
 
       const readLoop = async () => {
         let buffer = '';

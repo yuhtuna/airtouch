@@ -26,7 +26,7 @@ export default function App() {
   const [manualTriggerHeld, setManualTriggerHeld] = useState(false);
   const [logs, setLogs] = useState<string[]>([
     'AirTouch Spatial Studio active.',
-    'Ready for Seeed Xiao ESP32S3 hardware or interactive browser simulation.',
+    'Ready for Arduino Nano hardware or interactive browser simulation.',
   ]);
 
   // Wand Spatial State Refs for Zero-latency useFrame rendering

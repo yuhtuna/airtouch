@@ -2,37 +2,37 @@
 
 ## 1. Project Overview
 AirTouch is a 3D spatial haptic wand and browser-based spatial studio built with:
-- **Hardware**: Seeed Studio Xiao ESP32S3 Sense, GY-521 MPU-6050 (6-axis IMU), 10mm Coin Vibrator Motor, ILLUM Pushbutton Switch, and a diffused Front Tracking LED (NeoPixel or standard LED).
+- **Hardware**: Arduino Nano (ATmega328P), GY-521 MPU-6050 (6-axis IMU), 10mm Coin Vibrator Motor, ILLUM Pushbutton Switch, and a diffused Front Tracking LED (NeoPixel or standard LED).
 - **Frontend**: Vite + React + TypeScript + Three.js (`@react-three/fiber`, `@react-three/drei`) + Tailwind CSS.
-- **Communication**: Bidirectional Web Serial API (`navigator.serial` at `115200` baud) over USB-C, paired with 60 FPS browser webcam optical tracking (`getUserMedia` HTML5 Canvas blob detection) and Web Speech API for voice commands.
+- **Communication**: Bidirectional Web Serial API (`navigator.serial` at `115200` baud) over USB, paired with 60 FPS browser webcam optical tracking (`getUserMedia` HTML5 Canvas blob detection) and Web Speech API for voice commands.
 
 ---
 
-## 2. Strict Hardware Pinout (`Xiao ESP32S3 Sense`)
+## 2. Strict Hardware Pinout (`Arduino Nano ATmega328P`)
 NEVER change these pin definitions in firmware:
 - **MPU-6050 IMU (I2C)**:
-  - `VCC` -> `3V3`
+  - `VCC` -> `5V` (or `3V3` on GY-521)
   - `GND` -> `GND`
-  - `SDA` -> `D4` (`GPIO5`)
-  - `SCL` -> `D5` (`GPIO6`)
+  - `SDA` -> `A4` (Hardware I2C SDA)
+  - `SCL` -> `A5` (Hardware I2C SCL)
 - **Coin Vibrator Motor (PWM Haptics)**:
-  - `Pos (+)` -> `D1` (`GPIO2`) — Driven via `analogWrite(D1, pwmValue)` (0–255).
+  - `Pos (+)` -> `Pin 9` — Driven via `analogWrite(9, pwmValue)` (0–255 PWM via Timer1).
   - `Neg (-)` -> `GND`
 - **ILLUM Pushbutton Switch (Primary Trigger)**:
-  - `Leg 1` -> `D0` (`GPIO1`) — Configured with `pinMode(D0, INPUT_PULLUP)`. Active `LOW` (`0` = pressed, `1` = released).
+  - `Leg 1` -> `Pin 2` — Configured with `pinMode(2, INPUT_PULLUP)`. Active `LOW` (`0` = pressed, `1` = released).
   - `Leg 2` -> `GND`
 - **Tip Optical Beacon LED**:
-  - `Data / Anode (+)` -> `D3` (`GPIO4`) — Always illuminated brightly during operation so the laptop webcam can track the front diffuser orb.
+  - `Data / Anode (+)` -> `Pin 3` — Always illuminated brightly during operation (NeoPixel data or PWM high) so the laptop webcam can track the front diffuser orb.
+  - `GND / Cathode (-)` -> `GND`
 
 ---
 
 ## 3. Arduino CLI Build & Flash Commands
-- **Target FQBN**: `esp32:esp32:XIAO_ESP32S3:CDCOnBoot=cdc,PSRAM=opi`
-  *(CRITICAL: `CDCOnBoot=cdc` must always be enabled or `Serial.println` will not output over the native USB-C port).*
+- **Target FQBN**: `arduino:avr:nano:cpu=atmega328` (or `arduino:avr:nano:cpu=atmega328old` for clone bootloaders).
 - **Compile**:
-  `arduino-cli compile --fqbn esp32:esp32:XIAO_ESP32S3:CDCOnBoot=cdc,PSRAM=opi firmware/airtouch_firmware`
+  `arduino-cli compile --fqbn arduino:avr:nano:cpu=atmega328 firmware/airtouch_firmware`
 - **Upload**:
-  `arduino-cli upload -p <PORT> --fqbn esp32:esp32:XIAO_ESP32S3:CDCOnBoot=cdc,PSRAM=opi firmware/airtouch_firmware`
+  `arduino-cli upload -p <PORT> --fqbn arduino:avr:nano:cpu=atmega328 firmware/airtouch_firmware`
 
 ---
 

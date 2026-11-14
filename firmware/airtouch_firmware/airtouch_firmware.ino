@@ -1,13 +1,14 @@
 /**
- * AirTouch Firmware — Seeed Studio XIAO ESP32S3 Sense
+ * AirTouch Firmware — Arduino Nano (ATmega328P)
  * 
  * Strict Hardware Pinout:
- * - MPU-6050 (I2C): SDA -> D4 (GPIO5), SCL -> D5 (GPIO6)
- * - Coin Vibrator Motor (PWM): D1 (GPIO2)
- * - ILLUM Pushbutton: D0 (GPIO1), INPUT_PULLUP (Active LOW)
- * - Tip Optical Beacon LED: D3 (GPIO4), NeoPixel / Optical Beacon
+ * - MPU-6050 (I2C): SDA -> A4, SCL -> A5 (Hardware I2C)
+ * - Coin Vibrator Motor (PWM): Pin 9 (Timer1 PWM)
+ * - ILLUM Pushbutton: Pin 2 (Active LOW, INPUT_PULLUP)
+ * - Tip Optical Beacon LED: Pin 3 (PWM / NeoPixel Optical Beacon)
+ * - VCC: 5V (or 3V3 for GY-521), GND: GND
  * 
- * Target FQBN: esp32:esp32:XIAO_ESP32S3:CDCOnBoot=cdc,PSRAM=opi
+ * Target FQBN: arduino:avr:nano:cpu=atmega328 (or cpu=atmega328old)
  */
 
 #include <Wire.h>
@@ -15,12 +16,11 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_NeoPixel.h>
 
-// Strict Pinout Definitions
-#define PIN_BUTTON   D0 // GPIO 1 (Active LOW, INPUT_PULLUP)
-#define PIN_HAPTIC   D1 // GPIO 2 (PWM Haptics)
-#define PIN_BEACON   D3 // GPIO 4 (Optical Beacon LED / NeoPixel)
-#define PIN_SDA      D4 // GPIO 5 (I2C SDA)
-#define PIN_SCL      D5 // GPIO 6 (I2C SCL)
+// Arduino Nano Pinout Definitions
+#define PIN_BUTTON   2 // Digital Pin 2 (Active LOW, INPUT_PULLUP)
+#define PIN_BEACON   3 // Digital Pin 3 (Optical Beacon LED / NeoPixel)
+#define PIN_HAPTIC   9 // Digital Pin 9 (PWM Haptics)
+// Hardware I2C on ATmega328P: SDA = A4, SCL = A5
 
 #define NUM_BEACON_PIXELS 1
 
@@ -56,59 +56,9 @@ const unsigned long doubleClickGap = 300; // max time between clicks for double 
 
 uint8_t pendingClickEvent = 0; // 0 = none, 1 = single click, 2 = double click
 
-// Non-blocking Serial Input Buffer (Zero blocking latency)
-char serialBuffer[64];
+// Non-blocking Serial Input Buffer (32 bytes to preserve ATmega328P SRAM)
+char serialBuffer[32];
 uint8_t serialBufferIdx = 0;
-
-void setup() {
-  Serial.begin(115200);
-  delay(500);
-
-  // Configure Hardware Pins
-  pinMode(PIN_BUTTON, INPUT_PULLUP);
-  pinMode(PIN_HAPTIC, OUTPUT);
-  analogWrite(PIN_HAPTIC, 0);
-
-  // Initialize Beacon LED (Default bright cyan for 60 FPS webcam tracking)
-  beacon.begin();
-  beacon.setBrightness(255);
-  beacon.setPixelColor(0, beacon.Color(0, 255, 255)); // Bright Cyan beacon
-  beacon.show();
-
-  // Initialize I2C with strict Xiao ESP32S3 Sense pinout at 400kHz fast mode
-  Wire.begin(PIN_SDA, PIN_SCL);
-  Wire.setClock(400000);
-
-  if (!mpu.begin(0x68, &Wire)) {
-    // Retry once at 0x69
-    if (!mpu.begin(0x69, &Wire)) {
-      // Beacon red error indication
-      beacon.setPixelColor(0, beacon.Color(255, 0, 0));
-      beacon.show();
-      Serial.println(F("ERR: MPU-6050 not detected at 0x68 or 0x69! Check SDA(D4) and SCL(D5) connections."));
-      while (1) {
-        delay(100);
-      }
-    }
-  }
-
-  // Configure MPU6050 ranges
-  mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
-  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
-
-  // Startup haptic confirmation chirp
-  analogWrite(PIN_HAPTIC, 180);
-  delay(70);
-  analogWrite(PIN_HAPTIC, 0);
-
-  // Initial beacon back to bright cyan
-  beacon.setPixelColor(0, beacon.Color(0, 255, 255));
-  beacon.show();
-
-  lastImuTime = micros();
-  lastTelemetryTime = millis();
-}
 
 void parseSerialCommand(const char* cmd) {
   if (cmd == NULL || cmd[0] == '\0') return;
@@ -206,6 +156,56 @@ void updateButtonState() {
   }
 }
 
+void setup() {
+  Serial.begin(115200);
+  delay(300);
+
+  // Configure Hardware Pins
+  pinMode(PIN_BUTTON, INPUT_PULLUP);
+  pinMode(PIN_HAPTIC, OUTPUT);
+  analogWrite(PIN_HAPTIC, 0);
+
+  // Initialize Beacon LED (Default bright cyan for 60 FPS webcam tracking)
+  beacon.begin();
+  beacon.setBrightness(255);
+  beacon.setPixelColor(0, beacon.Color(0, 255, 255)); // Bright Cyan beacon
+  beacon.show();
+
+  // Initialize Hardware I2C (A4 = SDA, A5 = SCL on ATmega328P) at 400kHz fast mode
+  Wire.begin();
+  Wire.setClock(400000L);
+
+  if (!mpu.begin(0x68, &Wire)) {
+    // Retry once at 0x69
+    if (!mpu.begin(0x69, &Wire)) {
+      // Beacon red error indication
+      beacon.setPixelColor(0, beacon.Color(255, 0, 0));
+      beacon.show();
+      Serial.println(F("ERR: MPU-6050 not detected at 0x68 or 0x69! Check A4(SDA) and A5(SCL) connections."));
+      while (1) {
+        delay(100);
+      }
+    }
+  }
+
+  // Configure MPU6050 ranges
+  mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+
+  // Startup haptic confirmation chirp
+  analogWrite(PIN_HAPTIC, 180);
+  delay(70);
+  analogWrite(PIN_HAPTIC, 0);
+
+  // Initial beacon back to bright cyan
+  beacon.setPixelColor(0, beacon.Color(0, 255, 255));
+  beacon.show();
+
+  lastImuTime = micros();
+  lastTelemetryTime = millis();
+}
+
 void loop() {
   // 1. Process Incoming Serial Commands (Zero blocking latency)
   checkSerialInput();
@@ -258,21 +258,21 @@ void loop() {
     pendingClickEvent = 0; // Clear edge trigger
 
     // Compact CSV protocol: T,<roll>,<pitch>,<yaw>,<ax>,<ay>,<az>,<btn>,<clickEvent>
-    Serial.print("T,");
+    Serial.print(F("T,"));
     Serial.print(outRoll, 2);
-    Serial.print(",");
+    Serial.print(F(","));
     Serial.print(outPitch, 2);
-    Serial.print(",");
+    Serial.print(F(","));
     Serial.print(outYaw, 2);
-    Serial.print(",");
+    Serial.print(F(","));
     Serial.print(a.acceleration.x, 2);
-    Serial.print(",");
+    Serial.print(F(","));
     Serial.print(a.acceleration.y, 2);
-    Serial.print(",");
+    Serial.print(F(","));
     Serial.print(a.acceleration.z, 2);
-    Serial.print(",");
+    Serial.print(F(","));
     Serial.print(btnOutput);
-    Serial.print(",");
+    Serial.print(F(","));
     Serial.println(eventToSend);
   }
 }
