@@ -103,11 +103,16 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
             const g = data[i + 1];
             const b = data[i + 2];
 
-            // Robust Blue Optical Beacon Filter:
-            // Catches pure blue LEDs (b > 110, b > r + 20, b >= g * 0.75), electric blue, and overexposed glowing white cores
-            const isBlue = (b > 110 && (b - r) > 20 && b >= g * 0.75);
-            const isCyanOrWhiteCore = ((g + b) > 280 && (g + b) - (r * 1.3) > 30) || (b > 220 && g > 180);
-            if (isBlue || isCyanOrWhiteCore) {
+            // STRICT BLUE-ONLY OPTICAL FILTER:
+            // Blue channel must strictly dominate over both red and green.
+            // 1. Minimum blue threshold: b > 110
+            // 2. Strong chromatic separation from red: (b - r) > 30
+            // 3. Clear dominance over green: (b - g) > 15
+            // 4. Overexposed blue LED cores: b > 190 and (b - r) > 30 and b >= g
+            const isStrictBlue = (b > 110 && (b - r) > 30 && (b - g) > 15);
+            const isBrightBlueEmitter = (b > 190 && (b - r) > 30 && b >= g);
+
+            if (isStrictBlue || isBrightBlueEmitter) {
               const pixelIndex = i / 4;
               const px = pixelIndex % canvas.width;
               const py = Math.floor(pixelIndex / canvas.width);
@@ -120,7 +125,7 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
           let blobX = 0;
           let blobY = 0;
           let mirroredX = 0;
-          // High sensitivity threshold: locks onto even small or distant blue LEDs (>= 4 pixels)
+          // High sensitivity threshold for blue LED: locks on at 4+ pixels
           const detected = count >= 4;
 
           if (detected) {
@@ -167,9 +172,9 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
                 const targetY = blobY * scaleY;
                 const visualRadius = Math.max(10, Math.min(32, Math.sqrt(count / Math.PI) * scaleX * 2));
 
-                // Outer green target ring
-                mCtx.strokeStyle = '#10b981';
-                mCtx.lineWidth = 2;
+                // Outer electric blue target ring
+                mCtx.strokeStyle = '#0ea5e9';
+                mCtx.lineWidth = 2.5;
                 mCtx.beginPath();
                 mCtx.arc(targetX, targetY, visualRadius, 0, Math.PI * 2);
                 mCtx.stroke();
@@ -184,14 +189,14 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
                 mCtx.lineTo(targetX, targetY + visualRadius + 6);
                 mCtx.stroke();
 
-                // Live status text badge showing pixel count
-                mCtx.fillStyle = '#10b981';
+                // Live status text badge showing blue pixel count
+                mCtx.fillStyle = '#38bdf8';
                 mCtx.font = 'bold 9px monospace';
-                mCtx.fillText(`LOCK: ${count}px`, 6, monitor.height - 6);
+                mCtx.fillText(`BLUE LOCK: ${count}px`, 6, monitor.height - 6);
               } else {
                 mCtx.fillStyle = '#f59e0b';
                 mCtx.font = 'bold 9px monospace';
-                mCtx.fillText('SEARCHING BLUE LIGHT...', 6, monitor.height - 6);
+                mCtx.fillText('AIM BLUE LED AT CAMERA...', 6, monitor.height - 6);
               }
             }
           }
