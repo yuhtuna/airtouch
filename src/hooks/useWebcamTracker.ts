@@ -75,7 +75,7 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
 
       filterRef.current.reset();
       setActive(true);
-      onLog('Webcam 60 FPS Optical Blob Tracker active.');
+      onLog('Webcam 60 FPS Optical Blob Tracker active (Blue LED Mode).');
 
       const processFrame = () => {
         const video = videoRef.current;
@@ -103,10 +103,10 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
             const g = data[i + 1];
             const b = data[i + 2];
 
-            // Robust Blue & Cyan Optical Beacon Filter:
-            // Catches pure blue LEDs (b > 130, b > r, b >= g * 0.8), electric cyan beacons, and overexposed glowing cores
-            const isBlue = (b > 130 && (b - r) > 30 && b >= g * 0.8);
-            const isCyanOrWhiteCore = ((g + b) > 300 && (g + b) - (r * 1.4) > 40);
+            // Robust Blue Optical Beacon Filter:
+            // Catches pure blue LEDs (b > 110, b > r + 20, b >= g * 0.75), electric blue, and overexposed glowing white cores
+            const isBlue = (b > 110 && (b - r) > 20 && b >= g * 0.75);
+            const isCyanOrWhiteCore = ((g + b) > 280 && (g + b) - (r * 1.3) > 30) || (b > 220 && g > 180);
             if (isBlue || isCyanOrWhiteCore) {
               const pixelIndex = i / 4;
               const px = pixelIndex % canvas.width;
@@ -120,7 +120,8 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
           let blobX = 0;
           let blobY = 0;
           let mirroredX = 0;
-          const detected = count > 8;
+          // High sensitivity threshold: locks onto even small or distant blue LEDs (>= 4 pixels)
+          const detected = count >= 4;
 
           if (detected) {
             blobX = sumX / count;
@@ -133,9 +134,9 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
 
             // Apparent radius to Depth Z (more pixels = closer wand)
             const apparentRadius = Math.sqrt(count / Math.PI);
-            const rawZ = Math.max(-2.5, Math.min(3.5, (apparentRadius - 6.0) * 0.35));
+            const rawZ = Math.max(-2.5, Math.min(3.5, (apparentRadius - 5.0) * 0.35));
 
-            // Smooth using 1-Euro Filter
+            // Smooth using 1-Euro Filter with zero perceived latency
             const [smoothX, smoothY, smoothZ] = filterRef.current.filter(
               rawX,
               rawY,
@@ -144,7 +145,7 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
             );
 
             onPositionUpdate([smoothX, smoothY, smoothZ]);
-            setTrackingConfidence(Math.min(100, count * 3));
+            setTrackingConfidence(Math.min(100, count * 4));
           } else {
             setTrackingConfidence(0);
           }
@@ -164,20 +165,33 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
                 const scaleY = monitor.height / canvas.height;
                 const targetX = mirroredX * scaleX;
                 const targetY = blobY * scaleY;
+                const visualRadius = Math.max(10, Math.min(32, Math.sqrt(count / Math.PI) * scaleX * 2));
 
-                // Glowing green target crosshair
+                // Outer green target ring
                 mCtx.strokeStyle = '#10b981';
                 mCtx.lineWidth = 2;
                 mCtx.beginPath();
-                mCtx.arc(targetX, targetY, 8, 0, Math.PI * 2);
+                mCtx.arc(targetX, targetY, visualRadius, 0, Math.PI * 2);
                 mCtx.stroke();
 
+                // Cyan targeting crosshair
+                mCtx.strokeStyle = '#38bdf8';
+                mCtx.lineWidth = 1.5;
                 mCtx.beginPath();
-                mCtx.moveTo(targetX - 12, targetY);
-                mCtx.lineTo(targetX + 12, targetY);
-                mCtx.moveTo(targetX, targetY - 12);
-                mCtx.lineTo(targetX, targetY + 12);
+                mCtx.moveTo(targetX - visualRadius - 6, targetY);
+                mCtx.lineTo(targetX + visualRadius + 6, targetY);
+                mCtx.moveTo(targetX, targetY - visualRadius - 6);
+                mCtx.lineTo(targetX, targetY + visualRadius + 6);
                 mCtx.stroke();
+
+                // Live status text badge showing pixel count
+                mCtx.fillStyle = '#10b981';
+                mCtx.font = 'bold 9px monospace';
+                mCtx.fillText(`LOCK: ${count}px`, 6, monitor.height - 6);
+              } else {
+                mCtx.fillStyle = '#f59e0b';
+                mCtx.font = 'bold 9px monospace';
+                mCtx.fillText('SEARCHING BLUE LIGHT...', 6, monitor.height - 6);
               }
             }
           }

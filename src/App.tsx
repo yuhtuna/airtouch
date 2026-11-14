@@ -198,24 +198,14 @@ export default function App() {
     onPositionUpdate: (pos) => {
       lastOpticalPosRef.current = pos;
       if (!connected) {
-        // When not connected to hardware, drive wand motion smoothly via webcam
-        const current = wandPosRef.current;
-        wandPosRef.current = [
-          current[0] + (pos[0] - current[0]) * 0.35,
-          current[1] + (pos[1] - current[1]) * 0.35,
-          current[2] + (pos[2] - current[2]) * 0.35,
-        ];
-        const targetEuler = new THREE.Euler(
-          (wandRotRef.current[0] * Math.PI) / 180,
-          (wandRotRef.current[1] * Math.PI) / 180,
-          (wandRotRef.current[2] * Math.PI) / 180,
-          'YXZ'
-        );
-        const tipOffset = new THREE.Vector3(0, 0, 0.68).applyEuler(targetEuler);
+        // Direct 1:1 optical tracking from 1-Euro filter with zero artificial lag or fallback
+        wandPosRef.current = pos;
+        wandRotRef.current = [0, 0, 0];
+        const tipOffset = new THREE.Vector3(0, 0, 0.68);
         wandTipPosRef.current.set(
-          wandPosRef.current[0] + tipOffset.x,
-          wandPosRef.current[1] + tipOffset.y,
-          wandPosRef.current[2] + tipOffset.z
+          pos[0] + tipOffset.x,
+          pos[1] + tipOffset.y,
+          pos[2] + tipOffset.z
         );
       }
     },
@@ -284,9 +274,9 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleRecenter]);
 
-  // Active Disconnected Simulation Loop
+  // Active Disconnected Simulation Loop (Completely disabled when hardware connected OR when testing optical tracker)
   useEffect(() => {
-    if (connected) return;
+    if (connected || trackerActive) return;
 
     let animId: number;
     let time = 0;
@@ -302,14 +292,11 @@ export default function App() {
 
       wandRotRef.current = [simPitch, simYaw, simRoll];
 
-      const isOpticalValid = trackerActive && trackingConfidence > 30 && lastOpticalPosRef.current !== null;
-      if (!isOpticalValid) {
-        wandPosRef.current = [
-          Math.sin(time * 0.7) * 1.4,
-          Math.cos(time * 0.9) * 0.5 + 0.2,
-          Math.sin(time * 0.4) * 0.8,
-        ];
-      }
+      wandPosRef.current = [
+        Math.sin(time * 0.7) * 1.4,
+        Math.cos(time * 0.9) * 0.5 + 0.2,
+        Math.sin(time * 0.4) * 0.8,
+      ];
 
       const targetEuler = new THREE.Euler(
         (simPitch * Math.PI) / 180,
