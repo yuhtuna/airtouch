@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { OneEuroFilter3D } from '../lib/oneEuroFilter';
+import { OneEuroFilter3D, OneEuroFilter1D } from '../lib/oneEuroFilter';
 
 interface UseWebcamTrackerProps {
-  onPositionUpdate: (pos: [number, number, number]) => void;
+  onPositionUpdate: (pos: [number, number, number], opticalTilt?: [number, number, number]) => void;
   onLog: (msg: string) => void;
 }
 
@@ -13,19 +13,22 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const monitorCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const animIdRef = useRef<number | null>(null);
-  const filterRef = useRef(new OneEuroFilter3D(1.2, 0.02, 1.0));
+  // Custom filter: XY responsive (1.0, 0.02), Z rock-solid stable (0.5, 0.04)
+  const filterRef = useRef(new OneEuroFilter3D(1.0, 0.02, 0.5, 0.04, 1.0));
+  const tiltFilterRef = useRef(new OneEuroFilter1D(0.8, 0.03, 1.0));
 
-  // Auto-calibrated neutral depth baseline for 5mm Blue LED
-  const neutralSqrtCountRef = useRef(3.5);
+  // Auto-calibrated neutral depth baseline based on Blue Flux Density
+  const neutralSqrtDensityRef = useRef(3.5);
   const hasAutoCalibratedRef = useRef(false);
+  const currentDensityRef = useRef(0);
   const currentCountRef = useRef(0);
   const lastConfidenceRef = useRef(0);
 
   const recalibrateNeutralDepth = useCallback(() => {
-    if (currentCountRef.current >= 4) {
-      neutralSqrtCountRef.current = Math.sqrt(currentCountRef.current);
+    if (currentDensityRef.current >= 2.0) {
+      neutralSqrtDensityRef.current = Math.sqrt(currentDensityRef.current);
       hasAutoCalibratedRef.current = true;
-      onLog(`Camera Depth Calibrated: Neutral Z set at ${currentCountRef.current}px.`);
+      onLog(`Camera Depth Calibrated: Neutral Z baseline locked at ${currentDensityRef.current.toFixed(1)} density.`);
     }
   }, [onLog]);
 
@@ -109,66 +112,70 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
             const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const data = imgData.data;
 
-          let sumX = 0;
-          let sumY = 0;
-          let count = 0;
+          let sumWeightedX = 0;
+          let sumWeightedY = 0;
+          let totalDensity = 0;
+          let rawPixelCount = 0;
 
-          // Stride of 2 pixels (8 bytes) for high-precision 60 FPS performance
-          for (let i = 0; i < data.length; i += 8) {
+          // Process full pixel grid (stride 4 bytes) for subpixel accuracy without aliasing
+          for (let i = 0; i < data.length; i += 4) {
+            const b = data[i + 2];
+            if (b < 85) continue; // Noise floor
+
             const r = data[i];
             const g = data[i + 1];
-            const b = data[i + 2];
+            const maxRG = r > g ? r : g;
+            const blueExcess = b - maxRG;
 
-            // Robust Multi-Threshold Blue LED Emitter Filter:
-            // 1. Classical blue emission (fringe and diffused light):
-            const isBlueDominant = (b > 85 && b > r * 1.25 + 10 && b > g * 1.1 + 8);
-            // 2. High-intensity blue emitter core:
-            const isBrightBlue = (b > 150 && (b - r) > 15 && (b - g) > 8);
-            // 3. Overexposed LED Center (Lens bloom where Blue is highest channel):
-            const isOverexposedEmitter = (b >= 200 && b >= r && b >= g && (b > r + 3 || b > g + 3));
+            // Robust multi-tier blue filter
+            if ((blueExcess > 12 && b > 95) || (b >= 200 && b >= r && b >= g && (b > r + 3 || b > g + 3))) {
+              // Density weighting: Core emitter pixels have high weight (up to 1.0)
+              const saturation = Math.max(0.1, Math.min(1.0, blueExcess / 110.0));
+              const brightness = b / 255.0;
+              const weight = brightness * brightness * saturation;
 
-            if (isBlueDominant || isBrightBlue || isOverexposedEmitter) {
               const pixelIndex = i / 4;
               const px = pixelIndex % canvas.width;
-              const py = Math.floor(pixelIndex / canvas.width);
-              sumX += px;
-              sumY += py;
-              count++;
+              const py = (pixelIndex / canvas.width) | 0;
+
+              sumWeightedX += px * weight;
+              sumWeightedY += py * weight;
+              totalDensity += weight;
+              rawPixelCount++;
             }
           }
 
           let blobX = 0;
           let blobY = 0;
           let mirroredX = 0;
-          // High sensitivity threshold: locks on at 6+ sampled pixels
-          const detected = count >= 6;
-          currentCountRef.current = count;
+          // Locks on when substantial blue flux density is present
+          const detected = totalDensity >= 2.2 && rawPixelCount >= 5;
+          currentDensityRef.current = totalDensity;
+          currentCountRef.current = rawPixelCount;
 
           if (detected) {
-            blobX = sumX / count;
-            blobY = sumY / count;
-            // Mirror X so physical wand rightward movement translates rightward in 3D scene
+            blobX = sumWeightedX / totalDensity;
+            blobY = sumWeightedY / totalDensity;
             mirroredX = canvas.width - blobX;
 
-            const rawX = (mirroredX - canvas.width / 2) / 45.0; // Stage X mapping
-            const rawY = -(blobY - canvas.height / 2) / 45.0; // Stage Y mapping
+            const rawX = (mirroredX - canvas.width / 2) / 45.0;
+            const rawY = -(blobY - canvas.height / 2) / 45.0;
 
-            // Auto-lock neutral depth on first stable detection
-            if (!hasAutoCalibratedRef.current && count >= 8) {
-              neutralSqrtCountRef.current = Math.sqrt(count);
+            // Auto-lock neutral depth baseline on first solid detection
+            if (!hasAutoCalibratedRef.current && totalDensity >= 3.5) {
+              neutralSqrtDensityRef.current = Math.sqrt(totalDensity);
               hasAutoCalibratedRef.current = true;
-              onLog(`Neutral depth baseline auto-locked at ${count}px.`);
+              onLog(`Blue Density Auto-Locked: Neutral baseline at ${totalDensity.toFixed(1)}.`);
             }
 
-            // Auto-Calibrated Optical 3D Depth (Z):
-            // sqrt(count) represents linear apparent diameter of LED.
-            // Moving closer expands count -> rawZ moves forward towards user (+Z).
-            // Moving away shrinks count -> rawZ moves deep into screen (-Z).
-            const currentSqrt = Math.sqrt(count);
-            const deltaSqrt = currentSqrt - neutralSqrtCountRef.current;
-            const rawZ = Math.max(-3.5, Math.min(3.5, deltaSqrt * 2.8));
+            // Continuous, Subpixel-Weighted Blue Density Depth (Z):
+            // sqrt(totalDensity) represents optical emitter energy flux
+            const currentSqrt = Math.sqrt(totalDensity);
+            const deltaSqrt = currentSqrt - neutralSqrtDensityRef.current;
+            // Clean linear scaling: 2.2 units per sqrt(density) delta
+            const rawZ = Math.max(-3.5, Math.min(3.5, deltaSqrt * 2.2));
 
-            // Smooth using 1-Euro Filter with zero perceived latency
+            // Smooth using 1-Euro Filter (with heavy damping on stationary Z)
             const [smoothX, smoothY, smoothZ] = filterRef.current.filter(
               rawX,
               rawY,
@@ -176,12 +183,55 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
               performance.now()
             );
 
-            if (!isNaN(smoothX) && !isNaN(smoothY) && !isNaN(smoothZ)) {
-              onPositionUpdate([smoothX, smoothY, smoothZ]);
+            // Compute 2D Image Central Moments around centroid to detect optical tilt
+            let mu20 = 0;
+            let mu02 = 0;
+            let mu11 = 0;
+            const bMinX = Math.max(0, Math.floor(blobX - 24));
+            const bMaxX = Math.min(canvas.width - 1, Math.ceil(blobX + 24));
+            const bMinY = Math.max(0, Math.floor(blobY - 24));
+            const bMaxY = Math.min(canvas.height - 1, Math.ceil(blobY + 24));
+
+            for (let y = bMinY; y <= bMaxY; y++) {
+              for (let x = bMinX; x <= bMaxX; x++) {
+                const idx = (y * canvas.width + x) * 4;
+                const b = data[idx + 2];
+                if (b > 85) {
+                  const r = data[idx];
+                  const g = data[idx + 1];
+                  const maxRG = r > g ? r : g;
+                  const excess = b - maxRG;
+                  if (excess > 10) {
+                    const w = (b / 255.0) * (excess / 110.0);
+                    const dx = (canvas.width - x) - mirroredX;
+                    const dy = -(y - blobY);
+                    mu20 += dx * dx * w;
+                    mu02 += dy * dy * w;
+                    mu11 += dx * dy * w;
+                  }
+                }
+              }
             }
 
-            // Throttled React state update to prevent UI render freezes
-            const newConf = Math.min(100, Math.round(count * 2.5));
+            const denom = mu20 + mu02 + 0.001;
+            const elongation = Math.sqrt((mu20 - mu02) ** 2 + 4 * mu11 ** 2) / denom;
+            let rawOpticalRoll = 0;
+            let rawOpticalPitch = 0;
+
+            if (elongation > 0.15) {
+              // Tilt roll angle in degrees (-55 to +55)
+              rawOpticalRoll = -0.5 * Math.atan2(2 * mu11, mu20 - mu02) * (180 / Math.PI);
+              rawOpticalRoll = Math.max(-55, Math.min(55, rawOpticalRoll));
+              rawOpticalPitch = (mu02 > mu20 ? 1 : -1) * elongation * 25.0;
+            }
+            const smoothRoll = tiltFilterRef.current.filter(rawOpticalRoll, performance.now());
+
+            if (!isNaN(smoothX) && !isNaN(smoothY) && !isNaN(smoothZ)) {
+              onPositionUpdate([smoothX, smoothY, smoothZ], [rawOpticalPitch, 0, smoothRoll]);
+            }
+
+            // Throttled React state update
+            const newConf = Math.min(100, Math.round(totalDensity * 3.5));
             if (Math.abs(newConf - lastConfidenceRef.current) >= 4) {
               lastConfidenceRef.current = newConf;
               setTrackingConfidence(newConf);
@@ -209,13 +259,13 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
                 const targetX = mirroredX * scaleX;
                 const targetY = blobY * scaleY;
 
-                // Dynamic target ring radius: grows when closer, shrinks when further!
-                const visualRadius = Math.max(8, Math.min(42, 6 + Math.sqrt(count) * 3.6));
+                // Dynamic target ring radius derived from true blue density
+                const visualRadius = Math.max(9, Math.min(44, 8 + Math.sqrt(totalDensity) * 3.8));
 
-                // Glowing core dot
+                // Pulsing glowing core dot
                 mCtx.fillStyle = '#38bdf8';
                 mCtx.beginPath();
-                mCtx.arc(targetX, targetY, Math.max(3, Math.min(9, Math.sqrt(count))), 0, Math.PI * 2);
+                mCtx.arc(targetX, targetY, Math.max(3, Math.min(10, Math.sqrt(totalDensity) * 1.2)), 0, Math.PI * 2);
                 mCtx.fill();
 
                 // Outer electric blue target ring
@@ -254,11 +304,11 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
                 mCtx.fillStyle = '#38bdf8';
                 mCtx.fillRect(barX - 2, needleY - 2, barWidth + 4, 4);
 
-                // Live status text badge showing pixel count AND live depth
+                // Live status text badge showing pixel count AND live depth AND tilt
                 mCtx.fillStyle = '#38bdf8';
                 mCtx.font = 'bold 9px monospace';
                 const zSign = smoothZ >= 0 ? '+' : '';
-                mCtx.fillText(`LOCK: ${count}px | Z: ${zSign}${smoothZ.toFixed(2)}m`, 6, monitor.height - 6);
+                mCtx.fillText(`LOCK: ${totalDensity.toFixed(1)}D (${rawPixelCount}px) | Z: ${zSign}${smoothZ.toFixed(2)}m`, 6, monitor.height - 6);
               } else {
                 mCtx.fillStyle = '#f59e0b';
                 mCtx.font = 'bold 9px monospace';

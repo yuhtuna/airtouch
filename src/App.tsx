@@ -255,7 +255,7 @@ export default function App() {
     stopTracker,
     recalibrateNeutralDepth,
   } = useWebcamTracker({
-    onPositionUpdate: (pos) => {
+    onPositionUpdate: (pos, opticalTilt) => {
       // Sensor Fusion: Fuse optical depth anchor with IMU dynamic thrust
       const fusedZ = depthFusionRef.current.updateOptical(pos[2]);
 
@@ -267,6 +267,11 @@ export default function App() {
       lastOpticalPosRef.current = adjustedPos;
       // Optical + IMU Sensor Fusion drives 3D position in real time
       wandPosRef.current = adjustedPos;
+
+      // Optical blob tilt fallback when hardware IMU is not streaming
+      if (opticalTilt && (!connected || (wandRotRef.current[0] === 0 && wandRotRef.current[1] === 0 && wandRotRef.current[2] === 0))) {
+        wandRotRef.current = opticalTilt;
+      }
 
       const targetEuler = new THREE.Euler(
         (wandRotRef.current[0] * Math.PI) / 180,

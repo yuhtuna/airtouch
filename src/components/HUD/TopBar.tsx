@@ -65,18 +65,22 @@ export const TopBar: React.FC<TopBarProps> = ({
         {/* Minimalist Hardware Status Indicator */}
         <button
           onClick={onConnect}
-          className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl text-xs font-mono bg-slate-900/80 border border-slate-700 hover:border-slate-600 text-slate-200 transition-all"
-          title={connected ? 'Arduino Nano connected on COM6/COM7' : 'Click to connect Arduino Nano'}
+          className={`flex items-center gap-2.5 px-3.5 py-2 rounded-xl text-xs font-mono transition-all ${
+            connected
+              ? 'bg-slate-900/80 border border-emerald-500/40 text-emerald-300'
+              : 'bg-amber-500/20 border border-amber-400/80 text-amber-200 animate-pulse hover:bg-amber-500/30 shadow-lg shadow-amber-500/20'
+          }`}
+          title={connected ? 'Arduino Nano connected on COM6/COM7' : 'Click to connect Arduino Nano on COM6/COM7'}
         >
           <span
             className={`w-3 h-3 rounded-full ${
               connected
                 ? 'bg-emerald-400 shadow-md shadow-emerald-400/50'
-                : 'bg-amber-400 animate-pulse'
+                : 'bg-amber-400 animate-ping'
             }`}
           />
           <span className="font-bold tracking-wide">
-            {connected ? 'NANO ONLINE' : 'CONNECT NANO'}
+            {connected ? 'NANO ONLINE' : 'CLICK TO CONNECT NANO'}
           </span>
         </button>
       </div>

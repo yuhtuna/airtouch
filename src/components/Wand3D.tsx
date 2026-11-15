@@ -48,15 +48,15 @@ export const Wand3D = React.forwardRef<THREE.Group, Wand3DProps>(
           );
         } else {
           // Dynamic Motion-Informed Tilt Animation:
-          // Leans and points naturally into velocity vector!
-          const bankRoll = -Math.max(-0.45, Math.min(0.45, vel.x * 0.16));
-          const bankPitch = Math.max(-0.55, Math.min(0.55, -vel.y * 0.18 - vel.z * 0.22));
-          const bankYaw = Math.max(-0.45, Math.min(0.45, vel.x * 0.15));
+          // Leans and points prominently into velocity vector!
+          const bankRoll = -Math.max(-0.65, Math.min(0.65, vel.x * 0.38));
+          const bankPitch = Math.max(-0.65, Math.min(0.65, -vel.y * 0.32 - vel.z * 0.38));
+          const bankYaw = Math.max(-0.55, Math.min(0.55, vel.x * 0.30));
 
           // Subtle organic breathing sway so the stylus feels alive
           const time = state.clock.getElapsedTime();
-          const swayPitch = Math.sin(time * 1.6) * 0.04;
-          const swayYaw = Math.cos(time * 1.2) * 0.035;
+          const swayPitch = Math.sin(time * 1.6) * 0.06;
+          const swayYaw = Math.cos(time * 1.2) * 0.05;
 
           targetEuler = new THREE.Euler(
             bankPitch + swayPitch,

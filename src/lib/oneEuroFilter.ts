@@ -69,10 +69,16 @@ export class OneEuroFilter3D {
   private fy: OneEuroFilter1D;
   private fz: OneEuroFilter1D;
 
-  constructor(minCutoff = 1.2, beta = 0.02, dCutoff = 1.0) {
-    this.fx = new OneEuroFilter1D(minCutoff, beta, dCutoff);
-    this.fy = new OneEuroFilter1D(minCutoff, beta, dCutoff);
-    this.fz = new OneEuroFilter1D(minCutoff, beta, dCutoff);
+  constructor(
+    minCutoffXY = 1.0,
+    betaXY = 0.02,
+    minCutoffZ = 0.5,
+    betaZ = 0.04,
+    dCutoff = 1.0
+  ) {
+    this.fx = new OneEuroFilter1D(minCutoffXY, betaXY, dCutoff);
+    this.fy = new OneEuroFilter1D(minCutoffXY, betaXY, dCutoff);
+    this.fz = new OneEuroFilter1D(minCutoffZ, betaZ, dCutoff);
   }
 
   filter(x: number, y: number, z: number, timestamp = performance.now()): [number, number, number] {
