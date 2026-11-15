@@ -55,15 +55,19 @@ export const BottomHUD: React.FC<BottomHUDProps> = ({
             <span
               className={`h-2.5 w-2.5 rounded-full ${
                 trackingSource === 'WEBCAM'
-                  ? 'bg-emerald-400 shadow-md shadow-emerald-400/50'
+                  ? 'bg-emerald-400 shadow-md shadow-emerald-400/50 animate-pulse'
+                  : trackingSource === 'COASTING'
+                  ? 'bg-amber-400 shadow-md shadow-amber-400/50 animate-pulse'
                   : trackingSource === 'IMU_RAYCASTER'
                   ? 'bg-sky-400 shadow-md shadow-sky-400/50'
-                  : 'bg-amber-400'
+                  : 'bg-slate-400'
               }`}
             />
             <span className="font-bold text-slate-100">
               {trackingSource === 'WEBCAM'
-                ? '60 FPS Optical Webcam'
+                ? '60 FPS Optical + IMU Fused'
+                : trackingSource === 'COASTING'
+                ? 'Inertial Coasting (IMU)'
                 : trackingSource === 'IMU_RAYCASTER'
                 ? 'IMU Laser Ray'
                 : 'Demo Simulation'}

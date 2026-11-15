@@ -44,6 +44,10 @@ export default function App() {
   const recalibrateDepthRef = useRef<() => void>(() => {});
   const depthFusionRef = useRef(new DepthSensorFusion());
   const opticalOffsetRef = useRef<[number, number, number]>([0, 0, 0]);
+  const lastOpticalRawPosRef = useRef<[number, number, number]>([0, 0, 0]);
+  const lastOpticalSeenTimeRef = useRef<number>(0);
+  const lastValidTipPosRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 0, 0.68));
+  const trackingStateRef = useRef<'OPTICAL_LOCKED' | 'COASTING' | 'IMU_RAYCAST'>('IMU_RAYCAST');
 
   // Telemetry HUD state
   const [telemetry, setTelemetry] = useState<WandTelemetry>({
@@ -91,31 +95,24 @@ export default function App() {
       // 1. Update orientation [pitch, yaw, roll]
       wandRotRef.current = [data.pitch, data.yaw, data.roll];
 
-      // Update Depth Sensor Fusion with 100 Hz IMU dynamic linear acceleration
-      depthFusionRef.current.updateIMU(
+      // 2. High-frequency state prediction via DepthSensorFusion
+      const fusedZ = depthFusionRef.current.updateIMU(
         data.ax,
         data.ay,
         data.az,
         data.pitch,
         data.yaw,
-        data.roll
+        data.roll,
+        performance.now()
       );
 
-      // 2. Fallback to IMU raycaster position ONLY when optical camera is NOT tracking
-      const isOpticalTracking = trackerActiveRef.current && opticalConfidenceRef.current > 10;
-      if (!isOpticalTracking) {
-        const radYaw = (data.yaw * Math.PI) / 180;
-        const radPitch = (data.pitch * Math.PI) / 180;
-        const rayDistance = 2.8;
-        const imuRayPos: [number, number, number] = [
-          Math.sin(radYaw) * rayDistance,
-          -Math.sin(radPitch) * rayDistance + 0.3,
-          -Math.cos(radYaw) * Math.cos(radPitch) * rayDistance + 2.2,
-        ];
-        wandPosRef.current = imuRayPos;
-      }
+      const now = performance.now();
+      const timeSinceOptical = now - lastOpticalSeenTimeRef.current;
+      const isOpticalActive =
+        trackerActiveRef.current &&
+        lastOpticalSeenTimeRef.current > 0 &&
+        timeSinceOptical <= 300;
 
-      // 3. True 3D Wand Tip Kinematics (Rotated offset)
       const targetEuler = new THREE.Euler(
         (data.pitch * Math.PI) / 180,
         (data.yaw * Math.PI) / 180,
@@ -123,11 +120,42 @@ export default function App() {
         'YXZ'
       );
       const tipOffset = new THREE.Vector3(0, 0, 0.68).applyEuler(targetEuler);
-      wandTipPosRef.current.set(
-        wandPosRef.current[0] + tipOffset.x,
-        wandPosRef.current[1] + tipOffset.y,
-        wandPosRef.current[2] + tipOffset.z
-      );
+
+      if (isOpticalActive) {
+        // High-frequency depth prediction: update tip Z with fused depth
+        const activeZ = fusedZ + depthNudgeRef.current;
+        wandTipPosRef.current.z = activeZ;
+
+        // Wand handle follows kinematics (beacon at local [0, 0, 0.68])
+        wandPosRef.current = [
+          wandTipPosRef.current.x - tipOffset.x,
+          wandTipPosRef.current.y - tipOffset.y,
+          wandTipPosRef.current.z - tipOffset.z,
+        ];
+      } else {
+        // IMU Raycaster fallback mode (when optical tracking is inactive / lost > 300ms)
+        const radYaw = (data.yaw * Math.PI) / 180;
+        const radPitch = (data.pitch * Math.PI) / 180;
+        const rayDistance = 2.8;
+        const imuRayPos: [number, number, number] = [
+          Math.sin(radYaw) * rayDistance,
+          -Math.sin(radPitch) * rayDistance + 0.3,
+          -Math.cos(radYaw) * Math.cos(radPitch) * rayDistance + 2.2 + depthNudgeRef.current,
+        ];
+
+        // Smoothly lerp towards IMU raycast position to prevent sudden snaps
+        const curPos = new THREE.Vector3(...wandPosRef.current);
+        const targetRay = new THREE.Vector3(...imuRayPos);
+        curPos.lerp(targetRay, 0.15);
+        wandPosRef.current = [curPos.x, curPos.y, curPos.z];
+
+        // Tip position follows handle in raycast mode
+        wandTipPosRef.current.set(
+          curPos.x + tipOffset.x,
+          curPos.y + tipOffset.y,
+          curPos.z + tipOffset.z
+        );
+      }
 
       // 4. Dynamic brush scaling from wrist roll (1x to 5x)
       const dialScale = Math.max(0.5, Math.min(5.0, 1.0 + data.roll / 40.0));
@@ -185,15 +213,23 @@ export default function App() {
     recalibrateDepthRef.current();
     depthFusionRef.current.reset(0);
     // Lock optical offset to current camera position so wand centers at (0, 0, 0)
-    if (lastOpticalPosRef.current) {
-      opticalOffsetRef.current = [
-        lastOpticalPosRef.current[0] + opticalOffsetRef.current[0],
-        lastOpticalPosRef.current[1] + opticalOffsetRef.current[1],
-        0,
-      ];
-    }
-    wandPosRef.current = [0, 0, 0];
+    opticalOffsetRef.current = [
+      lastOpticalRawPosRef.current[0],
+      lastOpticalRawPosRef.current[1],
+      0,
+    ];
     wandTipPosRef.current.set(0, 0, 0);
+    lastValidTipPosRef.current.set(0, 0, 0);
+
+    const targetEuler = new THREE.Euler(
+      (wandRotRef.current[0] * Math.PI) / 180,
+      (wandRotRef.current[1] * Math.PI) / 180,
+      (wandRotRef.current[2] * Math.PI) / 180,
+      'YXZ'
+    );
+    const tipOffset = new THREE.Vector3(0, 0, 0.68).applyEuler(targetEuler);
+    wandPosRef.current = [-tipOffset.x, -tipOffset.y, -tipOffset.z];
+
     sendCommand('Z\n', true);
     triggerHaptic(160, 40);
     audioHaptics.playCollisionThud(0.8);
@@ -265,25 +301,86 @@ export default function App() {
     stopTracker,
     recalibrateNeutralDepth,
   } = useWebcamTracker({
-    onPositionUpdate: (pos, opticalTilt) => {
-      // 1. Position update with Recenter offset and depth nudge
-      const posX = pos[0] - opticalOffsetRef.current[0];
-      const posY = pos[1] - opticalOffsetRef.current[1];
-      const posZ = pos[2] + depthNudgeRef.current;
+    getFusionMetrics: () => depthFusionRef.current.getMetrics(),
+    onPositionUpdate: (pos, opticalTilt, metrics) => {
+      const now = performance.now();
+      lastOpticalRawPosRef.current = pos;
 
-      const adjustedPos: [number, number, number] = [posX, posY, posZ];
-      lastOpticalPosRef.current = adjustedPos;
-      // Optical tracker directly drives 3D position in real time
-      wandPosRef.current = adjustedPos;
+      if (metrics?.detected && metrics.confidence >= 15) {
+        lastOpticalSeenTimeRef.current = now;
+        trackingStateRef.current = 'OPTICAL_LOCKED';
 
-      // Optical blob tilt fallback when hardware IMU is not streaming
-      if (opticalTilt && (!connected || (wandRotRef.current[0] === 0 && wandRotRef.current[1] === 0 && wandRotRef.current[2] === 0))) {
-        wandRotRef.current = opticalTilt;
+        // 1. Position update with Recenter offset
+        const posX = pos[0] - opticalOffsetRef.current[0];
+        const posY = pos[1] - opticalOffsetRef.current[1];
+        const rawOpticalZ = pos[2];
+
+        // 2. Optical depth anchors the state observer
+        const fusedZ = depthFusionRef.current.updateOptical(rawOpticalZ, metrics.confidence, now);
+        const targetZ = fusedZ + depthNudgeRef.current;
+
+        const adjustedTip: [number, number, number] = [posX, posY, targetZ];
+        lastOpticalPosRef.current = adjustedTip;
+
+        // 3. Update Tip Position directly (where the optical beacon is)
+        wandTipPosRef.current.set(posX, posY, targetZ);
+        lastValidTipPosRef.current.copy(wandTipPosRef.current);
+
+        // 4. Optical blob tilt fallback when hardware IMU is not streaming
+        if (
+          opticalTilt &&
+          (!connected ||
+            (wandRotRef.current[0] === 0 &&
+              wandRotRef.current[1] === 0 &&
+              wandRotRef.current[2] === 0))
+        ) {
+          wandRotRef.current = opticalTilt;
+        }
+
+        // 5. Kinematic handle position
+        const targetEuler = new THREE.Euler(
+          (wandRotRef.current[0] * Math.PI) / 180,
+          (wandRotRef.current[1] * Math.PI) / 180,
+          (wandRotRef.current[2] * Math.PI) / 180,
+          'YXZ'
+        );
+        const tipOffset = new THREE.Vector3(0, 0, 0.68).applyEuler(targetEuler);
+        wandPosRef.current = [
+          posX - tipOffset.x,
+          posY - tipOffset.y,
+          targetZ - tipOffset.z,
+        ];
+      } else {
+        // Not detected in this camera frame:
+        const timeSinceOptical = now - lastOpticalSeenTimeRef.current;
+        if (lastOpticalSeenTimeRef.current > 0 && timeSinceOptical <= 300) {
+          // COASTING STATE: Brief occlusion / frame dropout (<= 300ms)
+          // Hold X and Y steady at last known optical position.
+          // Dead-reckon Z depth using fused dynamic state!
+          trackingStateRef.current = 'COASTING';
+          const fusedZ = depthFusionRef.current.getDepth() + depthNudgeRef.current;
+          wandTipPosRef.current.set(
+            lastValidTipPosRef.current.x,
+            lastValidTipPosRef.current.y,
+            fusedZ
+          );
+
+          const targetEuler = new THREE.Euler(
+            (wandRotRef.current[0] * Math.PI) / 180,
+            (wandRotRef.current[1] * Math.PI) / 180,
+            (wandRotRef.current[2] * Math.PI) / 180,
+            'YXZ'
+          );
+          const tipOffset = new THREE.Vector3(0, 0, 0.68).applyEuler(targetEuler);
+          wandPosRef.current = [
+            wandTipPosRef.current.x - tipOffset.x,
+            wandTipPosRef.current.y - tipOffset.y,
+            wandTipPosRef.current.z - tipOffset.z,
+          ];
+        } else {
+          trackingStateRef.current = 'IMU_RAYCAST';
+        }
       }
-
-      // The tracked optical beacon is the wand tip/beacon itself!
-      // This eliminates all rotational Z-teleporting when tilting the wand.
-      wandTipPosRef.current.set(adjustedPos[0], adjustedPos[1], adjustedPos[2]);
     },
     onLog: addLog,
   });
@@ -316,10 +413,13 @@ export default function App() {
       { id: '3', shape: 'gear', position: [0.0, 3.0, -1.2], color: '#f59e0b' },
     ]);
     opticalOffsetRef.current = [0, 0, 0];
+    lastOpticalRawPosRef.current = [0, 0, 0];
+    lastOpticalSeenTimeRef.current = 0;
     depthNudgeRef.current = 0;
     wandPosRef.current = [0, 0, 0];
     wandRotRef.current = [0, 0, 0];
     wandTipPosRef.current.set(0, 0, 0);
+    lastValidTipPosRef.current.set(0, 0, 0);
     depthFusionRef.current.reset(0);
     sendCommand('Z\n', true);
     triggerHaptic(200, 100);
@@ -489,9 +589,11 @@ export default function App() {
   // Primary trigger: physical hardware button OR browser click-to-trigger
   const isTriggerHeld = telemetry.btn === 1 || manualTriggerHeld;
 
-  // Tracking Source Calculation with Confidence Model
+  // Tracking Source Calculation with Confidence Model & Coasting Hysteresis
   const trackingSource: TrackingSource = (trackerActive && trackingConfidence > 15)
     ? 'WEBCAM'
+    : (trackerActive && lastOpticalSeenTimeRef.current > 0 && (performance.now() - lastOpticalSeenTimeRef.current) <= 300)
+    ? 'COASTING'
     : connected
     ? 'IMU_RAYCASTER'
     : 'SIMULATION';

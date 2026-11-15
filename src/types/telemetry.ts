@@ -13,7 +13,7 @@ export type DemoMode = 'SCULPT' | 'TEXTURE_LAB' | 'CAD_SLICER' | 'PHYSICS';
 
 export type SculptTool = 'DRAW' | 'ERASE';
 
-export type TrackingSource = 'WEBCAM' | 'IMU_RAYCASTER' | 'SIMULATION';
+export type TrackingSource = 'WEBCAM' | 'COASTING' | 'IMU_RAYCASTER' | 'SIMULATION';
 
 export interface MaterialPreset {
   id: string;
