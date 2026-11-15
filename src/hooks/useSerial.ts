@@ -97,8 +97,30 @@ export function useSerial({ onTelemetry, onLog }: UseSerialProps) {
     setStatus('CONNECTING');
 
     try {
-      const port = await (navigator as any).serial.requestPort();
-      await port.open({ baudRate: 115200 });
+      let port: any = null;
+
+      // Smart port resolution: check previously authorized ports first (e.g. COM6 or COM7)
+      try {
+        const authorizedPorts: any[] = await (navigator as any).serial.getPorts();
+        if (authorizedPorts && authorizedPorts.length > 0) {
+          for (const p of authorizedPorts) {
+            try {
+              await p.open({ baudRate: 115200 });
+              port = p;
+              break;
+            } catch (openErr) {
+              // Port busy or different COM port; try next candidate
+            }
+          }
+        }
+      } catch (e) {}
+
+      // If no pre-authorized port could be opened, prompt user with native browser device picker
+      if (!port) {
+        port = await (navigator as any).serial.requestPort();
+        await port.open({ baudRate: 115200 });
+      }
+
       portRef.current = port;
 
       abortControllerRef.current = new AbortController();

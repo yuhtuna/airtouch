@@ -9,9 +9,9 @@
     "preview": "vite preview",
     "firmware:compile": "arduino-cli compile --fqbn arduino:avr:nano:cpu=atmega328old firmware/airtouch_firmware",
     "firmware:compile:new": "arduino-cli compile --fqbn arduino:avr:nano:cpu=atmega328 firmware/airtouch_firmware",
-    "firmware:upload": "arduino-cli upload --fqbn arduino:avr:nano:cpu=atmega328old firmware/airtouch_firmware",
+    "firmware:upload": "node scripts/flash.js",
     "firmware:upload:new": "arduino-cli upload --fqbn arduino:avr:nano:cpu=atmega328 firmware/airtouch_firmware",
-    "firmware:flash": "arduino-cli compile --upload --fqbn arduino:avr:nano:cpu=atmega328old firmware/airtouch_firmware",
+    "firmware:flash": "node scripts/flash.js --compile",
     "firmware:flash:new": "arduino-cli compile --upload --fqbn arduino:avr:nano:cpu=atmega328 firmware/airtouch_firmware",
     "firmware:boards": "arduino-cli board list"
   },
