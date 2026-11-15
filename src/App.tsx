@@ -103,6 +103,16 @@ export default function App() {
       const isHardwareTriggerActive = data.btn === 1 || data.clickEvent > 0;
       isTriggerHeldRef.current = isHardwareTriggerActive || manualTriggerHeldRef.current;
 
+      // Hardware button transition logging & audio feedback
+      if (data.btn === 1 && !lastBtnStateRef.current) {
+        lastBtnStateRef.current = true;
+        audioHaptics.playDetentClick();
+        addLog('Wand Button: PRESSED (Trigger Active)');
+      } else if (data.btn === 0 && lastBtnStateRef.current) {
+        lastBtnStateRef.current = false;
+        addLog('Wand Button: RELEASED');
+      }
+
       // 1. Update orientation [pitch, yaw, roll]
       wandRotRef.current = [data.pitch, data.yaw, data.roll];
 

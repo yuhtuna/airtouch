@@ -141,6 +141,12 @@ void updateButtonState() {
       if (buttonState == LOW) {
         pressStartTime = millis();
         clickCount++;
+
+        // Instant hardware tactile haptic click pulse on button press (both Pin 3 & Pin 9)
+        analogWrite(motorPin, 220);
+        analogWrite(motorPinAlt, 220);
+        hapticEndTime = millis() + 45;
+        hapticActive = true;
       } else {
         lastReleaseTime = millis();
       }
