@@ -8,26 +8,27 @@ interface WorldOriginCursorProps {
 
 export const WorldOriginCursor: React.FC<WorldOriginCursorProps> = ({ wandTipPosRef }) => {
   const floorMarkerRef = useRef<THREE.Group>(null);
-  const dropLineRef = useRef<THREE.Line>(null);
-  const lineGeomRef = useRef<THREE.BufferGeometry>(null);
+  const laserBeamRef = useRef<THREE.Mesh>(null);
 
   useFrame(() => {
     if (!wandTipPosRef?.current) return;
     const tip = wandTipPosRef.current;
 
-    // Position floor shadow directly under wand tip at floor level (y = -2.39)
+    // Guard against NaN
+    if (isNaN(tip.x) || isNaN(tip.y) || isNaN(tip.z)) return;
+
+    const floorY = -2.39;
+
+    // Position floor shadow directly under wand tip on grid floor
     if (floorMarkerRef.current) {
-      floorMarkerRef.current.position.set(tip.x, -2.39, tip.z);
+      floorMarkerRef.current.position.set(tip.x, floorY, tip.z);
     }
 
-    // Update vertical drop-line connecting wand tip to floor
-    if (lineGeomRef.current) {
-      const positions = new Float32Array([
-        tip.x, tip.y, tip.z,
-        tip.x, -2.39, tip.z,
-      ]);
-      lineGeomRef.current.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-      lineGeomRef.current.attributes.position.needsUpdate = true;
+    // Position and scale vertical laser beam connecting wand tip to floor
+    if (laserBeamRef.current) {
+      const height = Math.max(0.01, tip.y - floorY);
+      laserBeamRef.current.scale.set(1, height, 1);
+      laserBeamRef.current.position.set(tip.x, floorY + height / 2, tip.z);
     }
   });
 
@@ -37,14 +38,14 @@ export const WorldOriginCursor: React.FC<WorldOriginCursorProps> = ({ wandTipPos
       <group position={[0, 0, 0]}>
         {/* Ground Plane Origin Ring */}
         <mesh rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[0.42, 0.46, 48]} />
+          <ringGeometry args={[0.42, 0.48, 48]} />
           <meshBasicMaterial color="#38bdf8" side={THREE.DoubleSide} transparent opacity={0.8} />
         </mesh>
 
-        {/* Outer Dashed Reference Ring */}
+        {/* Outer Reference Ring */}
         <mesh rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[0.78, 0.82, 32]} />
-          <meshBasicMaterial color="#f59e0b" side={THREE.DoubleSide} transparent opacity={0.6} wireframe />
+          <ringGeometry args={[0.78, 0.84, 32]} />
+          <meshBasicMaterial color="#f59e0b" side={THREE.DoubleSide} transparent opacity={0.5} wireframe />
         </mesh>
 
         {/* Central Pivot Sphere */}
@@ -57,47 +58,46 @@ export const WorldOriginCursor: React.FC<WorldOriginCursorProps> = ({ wandTipPos
           />
         </mesh>
 
-        {/* Blender-style 3D Axis Stems (X=Red, Y=Green, Z=Blue) */}
+        {/* Blender 3D Cardinal Axes (X=Red, Y=Green, Z=Blue) */}
         {/* +X Axis (Red) */}
-        <line>
-          <bufferGeometry attach="geometry" {...createAxisGeom([0, 0, 0], [0.9, 0, 0])} />
-          <lineBasicMaterial color="#ef4444" linewidth={2} />
-        </line>
+        <mesh position={[0.45, 0, 0]} rotation={[0, 0, -Math.PI / 2]}>
+          <cylinderGeometry args={[0.012, 0.012, 0.9, 8]} />
+          <meshBasicMaterial color="#ef4444" />
+        </mesh>
         {/* +Y Axis (Green) */}
-        <line>
-          <bufferGeometry attach="geometry" {...createAxisGeom([0, 0, 0], [0, 0.9, 0])} />
-          <lineBasicMaterial color="#22c55e" linewidth={2} />
-        </line>
-        {/* +Z Axis (Blue - Depth!) */}
-        <line>
-          <bufferGeometry attach="geometry" {...createAxisGeom([0, 0, 0], [0, 0, 0.9])} />
-          <lineBasicMaterial color="#3b82f6" linewidth={2} />
-        </line>
+        <mesh position={[0, 0.45, 0]}>
+          <cylinderGeometry args={[0.012, 0.012, 0.9, 8]} />
+          <meshBasicMaterial color="#22c55e" />
+        </mesh>
+        {/* +Z Axis (Blue - Depth) */}
+        <mesh position={[0, 0, 0.45]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.012, 0.012, 0.9, 8]} />
+          <meshBasicMaterial color="#3b82f6" />
+        </mesh>
       </group>
 
-      {/* 2. DYNAMIC DEPTH DROP-LINE (Connects tip to floor for instant 3D depth perception) */}
+      {/* 2. DYNAMIC DEPTH DROP-LINE (Cylinder Laser Beam - 100% WebGL Safe) */}
       {wandTipPosRef && (
         <>
-          <line ref={dropLineRef}>
-            <bufferGeometry ref={lineGeomRef} />
-            <lineDashedMaterial
+          <mesh ref={laserBeamRef}>
+            <cylinderGeometry args={[0.008, 0.008, 1, 8]} />
+            <meshBasicMaterial
               color="#38bdf8"
-              dashSize={0.08}
-              gapSize={0.05}
               transparent
               opacity={0.4}
+              depthWrite={false}
             />
-          </line>
+          </mesh>
 
           {/* Floor Shadow Ring on Ground */}
           <group ref={floorMarkerRef} position={[0, -2.39, 0]}>
             <mesh rotation={[-Math.PI / 2, 0, 0]}>
               <ringGeometry args={[0.12, 0.18, 24]} />
-              <meshBasicMaterial color="#38bdf8" side={THREE.DoubleSide} transparent opacity={0.5} />
+              <meshBasicMaterial color="#38bdf8" side={THREE.DoubleSide} transparent opacity={0.6} />
             </mesh>
             <mesh rotation={[-Math.PI / 2, 0, 0]}>
               <circleGeometry args={[0.06, 16]} />
-              <meshBasicMaterial color="#0284c7" side={THREE.DoubleSide} transparent opacity={0.6} />
+              <meshBasicMaterial color="#0284c7" side={THREE.DoubleSide} transparent opacity={0.7} />
             </mesh>
           </group>
         </>
@@ -105,10 +105,3 @@ export const WorldOriginCursor: React.FC<WorldOriginCursorProps> = ({ wandTipPos
     </group>
   );
 };
-
-function createAxisGeom(start: [number, number, number], end: [number, number, number]) {
-  const geom = new THREE.BufferGeometry();
-  const positions = new Float32Array([...start, ...end]);
-  geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  return geom;
-}

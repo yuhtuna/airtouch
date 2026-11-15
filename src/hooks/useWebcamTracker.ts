@@ -18,6 +18,7 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
   // Auto-calibrated neutral depth baseline for 5mm Blue LED
   const neutralSqrtCountRef = useRef(3.5);
   const currentCountRef = useRef(0);
+  const lastConfidenceRef = useRef(0);
 
   const recalibrateNeutralDepth = useCallback(() => {
     if (currentCountRef.current >= 4) {
@@ -89,20 +90,21 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
       onLog('Webcam 60 FPS Optical Blob Tracker active (Blue LED Mode).');
 
       const processFrame = () => {
-        const video = videoRef.current;
-        const canvas = canvasRef.current;
-        const monitor = monitorCanvasRef.current;
+        try {
+          const video = videoRef.current;
+          const canvas = canvasRef.current;
+          const monitor = monitorCanvasRef.current;
 
-        if (!video || !canvas || video.readyState < 2) {
-          animIdRef.current = requestAnimationFrame(processFrame);
-          return;
-        }
+          if (!video || !canvas || video.readyState < 2) {
+            animIdRef.current = requestAnimationFrame(processFrame);
+            return;
+          }
 
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (ctx) {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const data = imgData.data;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          if (ctx) {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imgData.data;
 
           let sumX = 0;
           let sumY = 0;
@@ -164,10 +166,21 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
               performance.now()
             );
 
-            onPositionUpdate([smoothX, smoothY, smoothZ]);
-            setTrackingConfidence(Math.min(100, Math.round(count * 2.5)));
+            if (!isNaN(smoothX) && !isNaN(smoothY) && !isNaN(smoothZ)) {
+              onPositionUpdate([smoothX, smoothY, smoothZ]);
+            }
+
+            // Throttled React state update to prevent UI render freezes
+            const newConf = Math.min(100, Math.round(count * 2.5));
+            if (Math.abs(newConf - lastConfidenceRef.current) >= 4) {
+              lastConfidenceRef.current = newConf;
+              setTrackingConfidence(newConf);
+            }
           } else {
-            setTrackingConfidence(0);
+            if (lastConfidenceRef.current !== 0) {
+              lastConfidenceRef.current = 0;
+              setTrackingConfidence(0);
+            }
           }
 
           // Live Picture-in-Picture camera monitor with tracking crosshairs (mirrored view)
@@ -236,6 +249,10 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
             }
           }
         }
+      } catch (frameErr) {
+        // Safeguard against any unexpected canvas or math errors stopping the animation loop
+        console.error('Webcam frame processing error:', frameErr);
+      }
 
         animIdRef.current = requestAnimationFrame(processFrame);
       };
