@@ -150,7 +150,7 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
             );
 
             onPositionUpdate([smoothX, smoothY, smoothZ]);
-            setTrackingConfidence(Math.min(100, count * 4));
+            setTrackingConfidence(Math.min(100, 20 + count * 4));
           } else {
             setTrackingConfidence(0);
           }

@@ -75,7 +75,8 @@ export const BottomHUD: React.FC<BottomHUDProps> = ({
       </div>
 
       {/* Center: Mode Specific Hint Pill & Tool Toggle */}
-      <div className="pointer-events-auto glass-panel px-4 py-2 rounded-full flex items-center gap-3 text-xs font-medium text-slate-300 shadow-xl border border-slate-700/60">
+      <div className="pointer-events-auto glass-panel px-4 py-2 rounded-xl flex flex-col items-center gap-1 text-xs font-medium text-slate-300 shadow-xl border border-slate-700/60">
+        <div>
         {activeMode === 'SCULPT' && (
           <div className="flex items-center gap-2">
             <button
@@ -123,6 +124,12 @@ export const BottomHUD: React.FC<BottomHUDProps> = ({
             <span className="text-slate-400 ml-1">Bat them around with the wand!</span>
           </div>
         )}
+        </div>
+        <div className="text-[10px] text-slate-400 font-mono flex items-center gap-2 border-t border-slate-800/80 pt-1 w-full justify-center">
+          <span><b className="text-sky-300">Double-Click Button</b> or <b className="text-sky-300">Tab / 1-4</b>: Switch Mode</span>
+          <span className="text-slate-600">•</span>
+          <span><b className="text-sky-300">Long-Press (&gt;1s)</b> or <b className="text-sky-300">Space</b>: Recenter</span>
+        </div>
       </div>
 
       {/* Right: Trigger & Dial Status */}

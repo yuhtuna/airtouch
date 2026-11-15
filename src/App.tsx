@@ -64,6 +64,15 @@ export default function App() {
     setLogs((prev) => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev.slice(0, 18)]);
   }, []);
 
+  // Button state refs for long-press and event dispatching
+  const lastBtnStateRef = useRef(false);
+  const btnPressStartRef = useRef(0);
+  const hasLongPressedRef = useRef(false);
+
+  const cycleModeRef = useRef<() => void>(() => {});
+  const handleRecenterRef = useRef<() => void>(() => {});
+  const handleUndoRef = useRef<() => void>(() => {});
+
   // Web Serial Hook
   const { connected, connect, disconnect, sendCommand } = useSerial({
     onTelemetry: (data) => {
@@ -82,12 +91,12 @@ export default function App() {
         -Math.cos(radYaw) * Math.cos(radPitch) * rayDistance + 2.2,
       ];
 
-      const isOpticalValid = trackerActive && opticalConfidenceRef.current > 30 && lastOpticalPosRef.current !== null;
+      const isOpticalValid = trackerActive && opticalConfidenceRef.current > 15 && lastOpticalPosRef.current !== null;
       const targetPos = isOpticalValid ? lastOpticalPosRef.current! : imuRayPos;
 
       // Smooth spatial blending to eliminate jumps when transitioning between optical and IMU
       const current = wandPosRef.current;
-      const blendFactor = isOpticalValid ? 0.35 : 0.2;
+      const blendFactor = isOpticalValid ? 0.45 : 0.2;
       wandPosRef.current = [
         current[0] + (targetPos[0] - current[0]) * blendFactor,
         current[1] + (targetPos[1] - current[1]) * blendFactor,
@@ -122,12 +131,29 @@ export default function App() {
 
       // 6. Gesture: Sharp Left Flick for Undo
       if (data.ax < -18.0 && data.btn === 0) {
-        handleUndo();
+        handleUndoRef.current();
       }
 
-      // 7. Double Click Recenter
+      // 7. Button Interactions:
+      // Double Click -> Cycle Next Demo Mode
       if (data.clickEvent === 2) {
-        handleRecenter();
+        cycleModeRef.current();
+      }
+
+      // Long Press (>1000ms) -> Recenter
+      const btnNow = data.btn === 1;
+      const wasPressed = lastBtnStateRef.current;
+      lastBtnStateRef.current = btnNow;
+
+      if (btnNow && !wasPressed) {
+        btnPressStartRef.current = performance.now();
+        hasLongPressedRef.current = false;
+      } else if (btnNow && wasPressed) {
+        if (!hasLongPressedRef.current && (performance.now() - btnPressStartRef.current) > 1000) {
+          hasLongPressedRef.current = true;
+          handleRecenterRef.current();
+          addLog('Button Long Press (>1s): Wand recentered.');
+        }
       }
     },
     onLog: addLog,
@@ -150,6 +176,19 @@ export default function App() {
     addLog('Wand calibrated & recentered (Z).');
   }, [sendCommand, triggerHaptic, addLog]);
 
+  // Mode cycling callback
+  const cycleMode = useCallback(() => {
+    const modes: DemoMode[] = ['SCULPT', 'TEXTURE_LAB', 'CAD_SLICER', 'PHYSICS'];
+    setActiveMode((prev) => {
+      const nextIdx = (modes.indexOf(prev) + 1) % modes.length;
+      const nextMode = modes[nextIdx];
+      triggerHaptic(200, 60);
+      audioHaptics.playDetentClick();
+      addLog(`Button: Switched mode to ${nextMode}`);
+      return nextMode;
+    });
+  }, [triggerHaptic, addLog]);
+
   // Undo gesture handler
   const handleUndo = useCallback(() => {
     setStrokes((prev) => {
@@ -160,6 +199,13 @@ export default function App() {
       return prev.slice(0, prev.length - 1);
     });
   }, [triggerHaptic, addLog]);
+
+  // Sync refs for event closures
+  useEffect(() => {
+    cycleModeRef.current = cycleMode;
+    handleRecenterRef.current = handleRecenter;
+    handleUndoRef.current = handleUndo;
+  }, [cycleMode, handleRecenter, handleUndo]);
 
   // Clear Canvas
   const handleClear = useCallback(() => {
@@ -248,7 +294,7 @@ export default function App() {
     addLog('Exported 3D sculpt to binary STL file.');
   }, [strokes, addLog]);
 
-  // Global Keyboard Shortcuts (Space: Recenter, E: Toggle Tool)
+  // Global Keyboard Shortcuts (Space: Recenter, E: Toggle Tool, Tab/M: Cycle Mode, 1-4: Select Mode, C: Clear)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space') {
@@ -256,11 +302,28 @@ export default function App() {
         handleRecenter();
       } else if (e.code === 'KeyE') {
         setSculptTool((prev) => (prev === 'DRAW' ? 'ERASE' : 'DRAW'));
+      } else if (e.code === 'Tab' || e.code === 'KeyM') {
+        e.preventDefault();
+        cycleMode();
+      } else if (e.code === 'Digit1') {
+        setActiveMode('SCULPT');
+        addLog('Mode: 3D SCULPT');
+      } else if (e.code === 'Digit2') {
+        setActiveMode('TEXTURE_LAB');
+        addLog('Mode: HAPTIC LAB');
+      } else if (e.code === 'Digit3') {
+        setActiveMode('CAD_SLICER');
+        addLog('Mode: CAD SLICER');
+      } else if (e.code === 'Digit4') {
+        setActiveMode('PHYSICS');
+        addLog('Mode: PHYSICS ARENA');
+      } else if (e.code === 'KeyC') {
+        handleClear();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleRecenter]);
+  }, [handleRecenter, cycleMode, handleClear, addLog]);
 
   // Active Disconnected Simulation Loop (Completely disabled when hardware connected OR when testing optical tracker)
   useEffect(() => {
@@ -331,7 +394,7 @@ export default function App() {
   const isTriggerHeld = telemetry.btn === 1 || manualTriggerHeld;
 
   // Tracking Source Calculation with Confidence Model
-  const trackingSource: TrackingSource = (trackerActive && trackingConfidence > 30)
+  const trackingSource: TrackingSource = (trackerActive && trackingConfidence > 15)
     ? 'WEBCAM'
     : connected
     ? 'IMU_RAYCASTER'
