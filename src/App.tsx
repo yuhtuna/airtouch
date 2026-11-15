@@ -81,6 +81,10 @@ export default function App() {
     setLogs((prev) => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev.slice(0, 18)]);
   }, []);
 
+  // Synchronous trigger refs for zero-latency 60/100 Hz interaction
+  const isTriggerHeldRef = useRef(false);
+  const manualTriggerHeldRef = useRef(false);
+
   // Button state refs for long-press and event dispatching
   const lastBtnStateRef = useRef(false);
   const btnPressStartRef = useRef(0);
@@ -94,6 +98,10 @@ export default function App() {
   const { connected, connect, disconnect, sendCommand } = useSerial({
     onTelemetry: (data) => {
       setTelemetry(data);
+
+      // Real-time zero-latency hardware trigger synchronization
+      const isHardwareTriggerActive = data.btn === 1 || data.clickEvent > 0;
+      isTriggerHeldRef.current = isHardwareTriggerActive || manualTriggerHeldRef.current;
 
       // 1. Update orientation [pitch, yaw, roll]
       wandRotRef.current = [data.pitch, data.yaw, data.roll];
@@ -420,6 +428,8 @@ export default function App() {
         clickEvent: 0,
       }));
       setManualTriggerHeld(false);
+      manualTriggerHeldRef.current = false;
+      isTriggerHeldRef.current = false;
     }
   }, [connected]);
 
@@ -516,12 +526,21 @@ export default function App() {
     addLog('Exported 3D sculpt to binary STL file.');
   }, [strokes, addLog]);
 
-  // Global Keyboard Shortcuts (Space: Recenter, E: Toggle Tool, Tab/M: Cycle Mode, 1-4: Select Mode, C: Clear)
+  // Global Keyboard Shortcuts (Space: Recenter, F/Enter: Trigger, D/E: Tools, Tab/M: Cycle Mode, 1-4: Select Mode, C: Clear)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      if (e.code === 'KeyF' || e.code === 'Enter') {
+        manualTriggerHeldRef.current = true;
+        isTriggerHeldRef.current = true;
+        setManualTriggerHeld(true);
+      } else if (e.code === 'Space') {
         e.preventDefault();
         handleRecenter();
+      } else if (e.code === 'KeyD') {
+        setSculptTool('DRAW');
+        addLog('Tool: SCULPT (INFLATE)');
       } else if (e.code === 'KeyE') {
         setSculptTool((prev) => (prev === 'DRAW' ? 'ERASE' : 'DRAW'));
       } else if (e.code === 'Tab' || e.code === 'KeyM') {
@@ -551,9 +570,22 @@ export default function App() {
         addLog(`Depth: Pulled Backward (-0.25m, Nudge: ${total}m)`);
       }
     };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'KeyF' || e.code === 'Enter') {
+        manualTriggerHeldRef.current = false;
+        isTriggerHeldRef.current = telemetry.btn === 1;
+        setManualTriggerHeld(false);
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleRecenter, cycleMode, handleClear, addLog]);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [handleRecenter, cycleMode, handleClear, addLog, telemetry.btn]);
 
   // Active Disconnected Simulation Loop (Completely disabled when in menu OR when hardware connected OR when testing optical tracker)
   useEffect(() => {
@@ -638,10 +670,16 @@ export default function App() {
       onMouseDown={(e) => {
         // Left click on canvas triggers drawing / action if not clicking HUD
         if ((e.target as HTMLElement).tagName === 'CANVAS') {
+          manualTriggerHeldRef.current = true;
+          isTriggerHeldRef.current = true;
           setManualTriggerHeld(true);
         }
       }}
-      onMouseUp={() => setManualTriggerHeld(false)}
+      onMouseUp={() => {
+        manualTriggerHeldRef.current = false;
+        isTriggerHeldRef.current = telemetry.btn === 1;
+        setManualTriggerHeld(false);
+      }}
       onWheel={(e) => {
         // Smooth mouse wheel depth zoom
         depthNudgeRef.current += e.deltaY * -0.002;
@@ -721,6 +759,7 @@ export default function App() {
                   <SculptMode
                     wandTipPosRef={wandTipPosRef}
                     isTriggerHeld={isTriggerHeld}
+                    isTriggerHeldRef={isTriggerHeldRef}
                     brushRadius={brushRadius}
                     tool={sculptTool}
                     sculptTarget={sculptTarget}
@@ -746,6 +785,7 @@ export default function App() {
                     wandRotRef={wandRotRef}
                     wandTipPosRef={wandTipPosRef}
                     isTriggerPressed={isTriggerHeld}
+                    isTriggerHeldRef={isTriggerHeldRef}
                     triggerHaptic={triggerHaptic}
                   />
                 )}
@@ -818,6 +858,16 @@ export default function App() {
             trackingSource={trackingSource}
             onToggleTool={() => setSculptTool((prev) => (prev === 'DRAW' ? 'ERASE' : 'DRAW'))}
             onSpawn={handleSpawn}
+            onTriggerDown={() => {
+              manualTriggerHeldRef.current = true;
+              isTriggerHeldRef.current = true;
+              setManualTriggerHeld(true);
+            }}
+            onTriggerUp={() => {
+              manualTriggerHeldRef.current = false;
+              isTriggerHeldRef.current = telemetry.btn === 1;
+              setManualTriggerHeld(false);
+            }}
           />
         )}
       </div>

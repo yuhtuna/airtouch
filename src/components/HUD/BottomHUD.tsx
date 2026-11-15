@@ -10,6 +10,8 @@ interface BottomHUDProps {
   trackingSource: TrackingSource;
   onToggleTool: () => void;
   onSpawn?: (shape: 'cube' | 'sphere' | 'cylinder' | 'gear') => void;
+  onTriggerDown?: () => void;
+  onTriggerUp?: () => void;
 }
 
 export const BottomHUD: React.FC<BottomHUDProps> = ({
@@ -19,6 +21,8 @@ export const BottomHUD: React.FC<BottomHUDProps> = ({
   sculptTool,
   sculptTarget = 'CLAY',
   trackingSource,
+  onTriggerDown,
+  onTriggerUp,
 }) => {
   return (
     <footer className="pointer-events-none z-20 absolute bottom-6 inset-x-6 flex items-end justify-between select-none">
@@ -142,19 +146,35 @@ export const BottomHUD: React.FC<BottomHUDProps> = ({
         </div>
 
         {/* Persistent Keyboard & Wand Hardware Controls */}
-        <div className="text-xs text-slate-400 font-mono flex items-center gap-2.5 border-t border-slate-800 pt-1.5 w-full justify-center">
-          <span><b className="text-sky-300 font-bold">Double-Click Button</b> / <b className="text-sky-300 font-bold">Tab / 1-4</b>: Mode</span>
+        <div className="text-xs text-slate-400 font-mono flex items-center gap-2.5 border-t border-slate-800 pt-1.5 w-full justify-center flex-wrap">
+          <span><b className="text-rose-400 font-bold">Wand Button / F / Click</b>: Sculpt/Interact</span>
           <span className="text-slate-600">•</span>
-          <span><b className="text-sky-300 font-bold">Long-Press (&gt;1s)</b> / <b className="text-sky-300 font-bold">Space</b>: Recenter</span>
+          <span><b className="text-sky-300 font-bold">Space</b>: Recenter</span>
           <span className="text-slate-600">•</span>
-          <span><b className="text-sky-300 font-bold">W / S or Wheel</b>: Depth (Z)</span>
+          <span><b className="text-sky-300 font-bold">1-4</b>: Modes</span>
+          <span className="text-slate-600">•</span>
+          <span><b className="text-sky-300 font-bold">D / E / S</b>: Tools</span>
+          <span className="text-slate-600">•</span>
+          <span><b className="text-sky-300 font-bold">W / S / Wheel</b>: Depth</span>
         </div>
       </div>
 
       {/* Right: Primary Trigger & Dial Brush Status */}
       <div className="pointer-events-auto glass-panel px-5 py-3.5 rounded-2xl flex items-center gap-6 shadow-2xl border border-slate-700/80 bg-slate-950/85">
         {/* Trigger State */}
-        <div className="flex flex-col">
+        <button
+          type="button"
+          onMouseDown={onTriggerDown}
+          onMouseUp={onTriggerUp}
+          onTouchStart={onTriggerDown}
+          onTouchEnd={onTriggerUp}
+          className={`flex flex-col text-left p-1.5 -m-1.5 rounded-xl transition-all cursor-pointer select-none ${
+            telemetry.btn === 1
+              ? 'bg-rose-500/20 ring-1 ring-rose-500/50'
+              : 'hover:bg-slate-800/50'
+          }`}
+          title="Hold wand button, press F, or click & hold here to sculpt"
+        >
           <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400">
             Primary Trigger
           </span>
@@ -170,7 +190,7 @@ export const BottomHUD: React.FC<BottomHUDProps> = ({
               {telemetry.btn === 1 ? 'HELD (ACTIVE)' : 'RELEASED'}
             </span>
           </div>
-        </div>
+        </button>
 
         <div className="w-[1px] h-9 bg-slate-800" />
 

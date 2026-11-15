@@ -6,6 +6,7 @@ import { Stroke, StrokePoint, SculptTool, SculptTarget } from '../types/telemetr
 interface SculptModeProps {
   wandTipPosRef: React.RefObject<THREE.Vector3>;
   isTriggerHeld: boolean;
+  isTriggerHeldRef?: React.RefObject<boolean>;
   brushRadius: number;
   tool: SculptTool;
   sculptTarget: SculptTarget;
@@ -63,6 +64,7 @@ const CompletedStroke: React.FC<{ stroke: Stroke }> = React.memo(({ stroke }) =>
 export const SculptMode: React.FC<SculptModeProps> = ({
   wandTipPosRef,
   isTriggerHeld,
+  isTriggerHeldRef,
   brushRadius,
   tool,
   sculptTarget,
@@ -79,6 +81,7 @@ export const SculptMode: React.FC<SculptModeProps> = ({
   const activePointsRef = useRef<StrokePoint[]>([]);
   const lastPosRef = useRef<THREE.Vector3 | null>(null);
   const wasDrawingRef = useRef(false);
+  const wasTriggerHeldRef = useRef(false);
   const hapticTimerRef = useRef(0);
 
   // Digital Clay Sphere Geometry (Subdivided Icosahedron for uniform organic vertex distribution)
@@ -117,51 +120,82 @@ export const SculptMode: React.FC<SculptModeProps> = ({
   useFrame((_, delta) => {
     const tipPos = wandTipPosRef.current || new THREE.Vector3(0, 0, 0);
 
+    // Direct synchronous trigger resolution (hardware 100 Hz ref OR React prop)
+    const activeTrigger = Boolean((isTriggerHeldRef && isTriggerHeldRef.current) || isTriggerHeld);
+    const isClickDown = activeTrigger && !wasTriggerHeldRef.current;
+    wasTriggerHeldRef.current = activeTrigger;
+
+    // Instant tactile chirp on click down transition
+    if (isClickDown) {
+      const hapticPwm = tool === 'DRAW' ? 180 : tool === 'ERASE' ? 220 : 130;
+      triggerHaptic(hapticPwm, 45);
+    }
+
     // ========================================================
     // MODE A: DIGITAL CLAY SCULPTING (BLENDER-STYLE OBJECT ANCHOR)
     // ========================================================
     if (sculptTarget === 'CLAY') {
       const posAttr = clayGeom.attributes.position as THREE.BufferAttribute;
       const positions = posAttr.array as Float32Array;
+      const count = posAttr.count;
 
-      // Project reticle ring onto clay surface facing outwards
+      // Calculate wand pointing direction relative to clay ball center (0, 0, 0)
       const distToCenter = tipPos.length();
       const normalDir = distToCenter > 0.001 ? tipPos.clone().normalize() : new THREE.Vector3(0, 0, 1);
-      const surfacePoint = normalDir.clone().multiplyScalar(sphereRadius);
 
+      // Dynamically locate surface elevation along normalDir so the brush sticks to extruded bumps & carved valleys
+      let maxDot = -1;
+      let surfaceElevation = sphereRadius;
+      for (let i = 0; i < count; i += 4) {
+        const vx = positions[i * 3];
+        const vy = positions[i * 3 + 1];
+        const vz = positions[i * 3 + 2];
+        const dot = vx * normalDir.x + vy * normalDir.y + vz * normalDir.z;
+        if (dot > maxDot) {
+          maxDot = dot;
+          surfaceElevation = Math.sqrt(vx * vx + vy * vy + vz * vz);
+        }
+      }
+
+      const surfacePoint = normalDir.clone().multiplyScalar(surfaceElevation);
+
+      // Project reticle ring onto actual clay surface facing outwards
       if (reticleRef.current) {
-        reticleRef.current.position.copy(surfacePoint);
+        reticleRef.current.position.copy(surfacePoint.clone().addScaledVector(normalDir, 0.015));
         reticleRef.current.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normalDir);
       }
 
       if (reticleRingRef.current) {
-        reticleRingRef.current.position.copy(tipPos);
+        reticleRingRef.current.position.copy(surfacePoint);
       }
 
-      if (isTriggerHeld) {
-        // Continuous tactile haptic buzz while actively sculpting/carving clay
+      if (activeTrigger) {
+        // Continuous tactile haptic buzz while actively holding trigger on clay
         hapticTimerRef.current += delta;
         if (hapticTimerRef.current > 0.05) {
           hapticTimerRef.current = 0;
-          const hapticPwm = tool === 'DRAW' ? 85 : tool === 'ERASE' ? 140 : 65;
+          const hapticPwm = tool === 'DRAW' ? 95 : tool === 'ERASE' ? 150 : 70;
           triggerHaptic(hapticPwm, 35);
         }
 
-        const effectiveBrushRadius = Math.max(0.2, 0.42 * brushRadius);
+        const effectiveBrushRadius = Math.max(0.25, 0.45 * brushRadius);
         const brushRadiusSq = effectiveBrushRadius * effectiveBrushRadius;
-        const sculptSpeed = (tool === 'DRAW' ? 0.95 : tool === 'ERASE' ? 0.95 : 0.65) * Math.min(delta, 0.05);
+
+        // Single tap impulse displacement vs continuous smooth hold extrusion
+        const sculptSpeed = (tool === 'DRAW' ? 1.2 : tool === 'ERASE' ? 1.2 : 0.8) * Math.min(delta, 0.05);
+        const instantImpulse = isClickDown ? 0.08 * brushRadius : 0;
 
         let modified = false;
-        const count = posAttr.count;
 
         for (let i = 0; i < count; i++) {
           const vx = positions[i * 3];
           const vy = positions[i * 3 + 1];
           const vz = positions[i * 3 + 2];
 
-          const dx = vx - tipPos.x;
-          const dy = vy - tipPos.y;
-          const dz = vz - tipPos.z;
+          // Distance check evaluated directly against the anchored surfacePoint reticle!
+          const dx = vx - surfacePoint.x;
+          const dy = vy - surfacePoint.y;
+          const dz = vz - surfacePoint.z;
           const distSq = dx * dx + dy * dy + dz * dz;
 
           if (distSq < brushRadiusSq) {
@@ -179,17 +213,15 @@ export const SculptMode: React.FC<SculptModeProps> = ({
 
             if (tool === 'DRAW') {
               // INFLATE / ADD CLAY: Extrude outward along surface normal
-              const displacement = sculptSpeed * falloff;
-              // Limit max extrusion to 3.2 units to maintain solid geometry
-              if (vLen + displacement < 3.2) {
+              const displacement = (sculptSpeed + instantImpulse) * falloff;
+              if (vLen + displacement < 3.8) {
                 positions[i * 3] += nx * displacement;
                 positions[i * 3 + 1] += ny * displacement;
                 positions[i * 3 + 2] += nz * displacement;
               }
             } else if (tool === 'ERASE') {
               // CARVE / PUSH IN: Depress clay inward along surface normal
-              const displacement = sculptSpeed * falloff;
-              // Limit min depression to 0.4 units (core core floor)
+              const displacement = (sculptSpeed + instantImpulse) * falloff;
               if (vLen - displacement > 0.4) {
                 positions[i * 3] -= nx * displacement;
                 positions[i * 3 + 1] -= ny * displacement;
@@ -200,7 +232,7 @@ export const SculptMode: React.FC<SculptModeProps> = ({
               const targetX = basePositions[i * 3];
               const targetY = basePositions[i * 3 + 1];
               const targetZ = basePositions[i * 3 + 2];
-              const smoothFactor = 0.22 * falloff;
+              const smoothFactor = Math.min(1.0, (0.28 + (isClickDown ? 0.35 : 0)) * falloff);
               positions[i * 3] = vx * (1 - smoothFactor) + targetX * smoothFactor;
               positions[i * 3 + 1] = vy * (1 - smoothFactor) + targetY * smoothFactor;
               positions[i * 3 + 2] = vz * (1 - smoothFactor) + targetZ * smoothFactor;
@@ -219,7 +251,7 @@ export const SculptMode: React.FC<SculptModeProps> = ({
     // MODE B: FREEHAND 3D AIR DRAWING
     // ========================================================
     if (sculptTarget === 'AIR') {
-      if (isTriggerHeld) {
+      if (activeTrigger) {
         if (tool === 'DRAW') {
           hapticTimerRef.current += delta;
           if (hapticTimerRef.current > 0.05) {
@@ -251,6 +283,25 @@ export const SculptMode: React.FC<SculptModeProps> = ({
       } else {
         if (wasDrawingRef.current) {
           const completedPoints = [...activePointsRef.current];
+          // Expand single-tap or 2-point taps into valid 3-point spline bead so clicks are never lost
+          if (completedPoints.length === 1) {
+            const p0 = completedPoints[0];
+            completedPoints.push(
+              { ...p0, z: p0.z + 0.015 },
+              { ...p0, z: p0.z - 0.015 }
+            );
+          } else if (completedPoints.length === 2) {
+            const p0 = completedPoints[0];
+            const p1 = completedPoints[1];
+            completedPoints.push({
+              x: (p0.x + p1.x) / 2,
+              y: (p0.y + p1.y) / 2,
+              z: (p0.z + p1.z) / 2,
+              radius: p0.radius,
+              color: p0.color,
+            });
+          }
+
           if (completedPoints.length >= 3) {
             onAddCompletedStroke({
               id: Math.random().toString(36).substring(2, 9),
@@ -325,19 +376,19 @@ export const SculptMode: React.FC<SculptModeProps> = ({
 
           {/* Interactive Projected Surface Sculpt Reticle */}
           <group ref={reticleRef}>
-            <mesh rotation={[-Math.PI / 2, 0, 0]}>
-              <ringGeometry args={[effectiveRadius * 0.88, effectiveRadius * 1.02, 32]} />
+            <mesh>
+              <ringGeometry args={[effectiveRadius * 0.90, effectiveRadius * 1.04, 32]} />
               <meshBasicMaterial
                 color={tool === 'DRAW' ? '#38bdf8' : tool === 'ERASE' ? '#ef4444' : '#10b981'}
                 side={THREE.DoubleSide}
                 transparent
-                opacity={0.8}
+                opacity={0.85}
               />
             </mesh>
             <pointLight
               color={tool === 'DRAW' ? '#38bdf8' : tool === 'ERASE' ? '#ef4444' : '#10b981'}
-              intensity={0.6}
-              distance={1.5}
+              intensity={0.8}
+              distance={1.8}
             />
           </group>
 

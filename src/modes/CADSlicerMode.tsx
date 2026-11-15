@@ -6,6 +6,7 @@ interface CADSlicerModeProps {
   wandRotRef: React.RefObject<[number, number, number]>;
   wandTipPosRef: React.RefObject<THREE.Vector3>;
   isTriggerPressed: boolean;
+  isTriggerHeldRef?: React.RefObject<boolean>;
   triggerHaptic: (pwm: number, ms: number) => void;
 }
 
@@ -13,6 +14,7 @@ export const CADSlicerMode: React.FC<CADSlicerModeProps> = ({
   wandRotRef,
   wandTipPosRef,
   isTriggerPressed,
+  isTriggerHeldRef,
   triggerHaptic,
 }) => {
   const { gl } = useThree();
@@ -27,6 +29,7 @@ export const CADSlicerMode: React.FC<CADSlicerModeProps> = ({
   useFrame((_, delta) => {
     const rot = wandRotRef.current || [0, 0, 0];
     const tipPos = wandTipPosRef.current || new THREE.Vector3(0, 0, 0);
+    const activeTrigger = Boolean((isTriggerHeldRef && isTriggerHeldRef.current) || isTriggerPressed);
 
     // Slicer plane orientation derived from wand tilt (pitch and roll)
     const euler = new THREE.Euler(
@@ -42,7 +45,7 @@ export const CADSlicerMode: React.FC<CADSlicerModeProps> = ({
     rotationAngleRef.current += delta * 1.2;
 
     // Exploder factor interpolation when trigger is held
-    if (isTriggerPressed) {
+    if (activeTrigger) {
       setExplodedFactor((prev) => Math.min(prev + delta * 2.0, 1.0));
       if (!wasPressedRef.current) {
         triggerHaptic(150, 40); // grab thud
