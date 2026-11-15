@@ -137,7 +137,7 @@ export class DepthSensorFusion {
 
   /**
    * Update with 60 Hz Optical Camera Depth measurement
-   * Anchors position, corrects drift, and adapts accelerometer bias.
+   * Anchors position with high responsiveness, corrects drift, and tracks physical distance.
    */
   updateOptical(opticalZ: number, confidence = 100, now: number = performance.now()): number {
     if (isNaN(opticalZ)) return this.fusedZ;
@@ -151,8 +151,7 @@ export class DepthSensorFusion {
     const timeSinceLastImu = now - this.lastImuTime;
     this.lastOpticalTime = now;
 
-    // If hardware IMU is not streaming (e.g. disconnected or >250ms silence),
-    // optical camera directly drives position with smooth responsiveness
+    // If hardware IMU is not streaming, optical camera directly drives position
     if (timeSinceLastImu > 250) {
       this.fusedZ = opticalZ;
       this.velocityZ = 0;
@@ -160,20 +159,14 @@ export class DepthSensorFusion {
       return this.fusedZ;
     }
 
-    // When IMU is actively streaming:
-    // Innovation residual: optical observation vs predicted state
+    // Fast, responsive complementary anchor:
+    // Optical camera is the ground-truth depth anchor (85% immediate convergence per 60Hz frame)
     const residual = opticalZ - this.fusedZ;
+    this.fusedZ += 0.85 * residual;
 
-    // Confidence weighting (0.35 to 1.0)
-    const confWeight = Math.max(0.35, Math.min(1.0, confidence / 100.0));
-
-    // State observer correction
-    this.fusedZ += (this.K_pos * confWeight) * residual;
-    this.velocityZ += (this.K_vel * confWeight) * residual;
-    this.biasZ -= (this.K_bias * confWeight) * residual;
-
-    // Constrain bias within realistic bounds (±2.5 m/s^2)
-    this.biasZ = Math.max(-2.5, Math.min(2.5, this.biasZ));
+    // Blend instantaneous velocity towards optical displacement rate
+    this.velocityZ = this.velocityZ * 0.5 + 0.5 * (residual * 8.0);
+    this.velocityZ = Math.max(-2.5, Math.min(2.5, this.velocityZ));
 
     return this.fusedZ;
   }

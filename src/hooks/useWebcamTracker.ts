@@ -26,22 +26,23 @@ export function useWebcamTracker({ onPositionUpdate, onLog, getFusionMetrics }: 
   const monitorCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const animIdRef = useRef<number | null>(null);
   const lastFilteredPosRef = useRef<[number, number, number]>([0, 0, 0]);
-  // Custom filter: XY responsive (1.0, 0.02), Z rock-solid stable (0.45, 0.04)
-  const filterRef = useRef(new OneEuroFilter3D(1.0, 0.02, 0.45, 0.04, 1.0));
+  // Custom filter: XY responsive (1.0, 0.02), Z responsive and stable (0.8, 0.03)
+  const filterRef = useRef(new OneEuroFilter3D(1.0, 0.02, 0.8, 0.03, 1.0));
   const tiltFilterRef = useRef(new OneEuroFilter1D(0.8, 0.03, 1.0));
 
-  // Auto-calibrated neutral depth baseline based on Connected Component Apparent Diameter
-  const neutralDiameterRef = useRef(14.0);
-  const hasAutoCalibratedRef = useRef(false);
+  // Auto-calibrated neutral depth baseline based on combined optical size (diameter + radiance energy)
+  const neutralDepthMetricRef = useRef(10.0);
+  const currentDepthMetricRef = useRef(10.0);
   const currentDiameterRef = useRef(0);
+  const hasAutoCalibratedRef = useRef(false);
   const lastConfidenceRef = useRef(0);
 
   const recalibrateNeutralDepth = useCallback(() => {
-    if (currentDiameterRef.current >= 4.0) {
-      neutralDiameterRef.current = currentDiameterRef.current;
+    if (currentDepthMetricRef.current > 0) {
+      neutralDepthMetricRef.current = currentDepthMetricRef.current;
       hasAutoCalibratedRef.current = true;
       filterRef.current.reset();
-      onLog(`Camera Depth Calibrated: Neutral apparent diameter locked at ${currentDiameterRef.current.toFixed(1)}px.`);
+      onLog(`Camera Depth Calibrated: Neutral optical baseline locked at ${currentDepthMetricRef.current.toFixed(1)}.`);
     }
   }, [onLog]);
 
@@ -236,17 +237,22 @@ export function useWebcamTracker({ onPositionUpdate, onLog, getFusionMetrics }: 
               apparentDiameter = 4 * Math.sqrt(lambda1 / (sumW + 0.001));
               currentDiameterRef.current = apparentDiameter;
 
+              // Combined optical depth metric: geometric diameter + blue radiance energy
+              const blueEnergy = Math.sqrt(sumW);
+              const opticalMetric = 0.5 * apparentDiameter + 1.2 * blueEnergy;
+              currentDepthMetricRef.current = opticalMetric;
+
               // Auto-lock neutral depth baseline on first solid detection
-              if (!hasAutoCalibratedRef.current && apparentDiameter >= 6.0) {
-                neutralDiameterRef.current = apparentDiameter;
+              if (!hasAutoCalibratedRef.current && opticalMetric >= 3.0) {
+                neutralDepthMetricRef.current = opticalMetric;
                 hasAutoCalibratedRef.current = true;
-                onLog(`Optical Baseline Auto-Locked: Neutral LED diameter at ${apparentDiameter.toFixed(1)}px.`);
+                onLog(`Optical Baseline Auto-Locked: Neutral optical metric at ${opticalMetric.toFixed(1)}.`);
               }
 
               // Geometric Perspective Depth (Z):
-              // Apparent diameter delta from neutral baseline: 0.22m per pixel of apparent size shift
-              const deltaD = apparentDiameter - neutralDiameterRef.current;
-              const rawZ = Math.max(-3.5, Math.min(3.5, deltaD * 0.22));
+              // Delta from neutral baseline with wide, vivid dynamic range
+              const deltaD = opticalMetric - neutralDepthMetricRef.current;
+              const rawZ = Math.max(-3.5, Math.min(3.5, deltaD * 0.40));
 
               const rawX = (mirroredX - canvas.width / 2) / 45.0;
               const rawY = -(blobY - canvas.height / 2) / 45.0;

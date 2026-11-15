@@ -221,12 +221,17 @@ export default function App() {
     wandTipPosRef.current.set(0, 0, 0);
     lastValidTipPosRef.current.set(0, 0, 0);
 
-    const targetEuler = new THREE.Euler(
-      (wandRotRef.current[0] * Math.PI) / 180,
-      (wandRotRef.current[1] * Math.PI) / 180,
-      (wandRotRef.current[2] * Math.PI) / 180,
-      'YXZ'
-    );
+    // Zero orientation refs, HUD state, and brush scale immediately
+    wandRotRef.current = [0, 0, 0];
+    setTelemetry((prev) => ({
+      ...prev,
+      roll: 0,
+      pitch: 0,
+      yaw: 0,
+    }));
+    setBrushRadius(1.0);
+
+    const targetEuler = new THREE.Euler(0, 0, 0, 'YXZ');
     const tipOffset = new THREE.Vector3(0, 0, 0.68).applyEuler(targetEuler);
     wandPosRef.current = [-tipOffset.x, -tipOffset.y, -tipOffset.z];
 
@@ -421,6 +426,14 @@ export default function App() {
     wandTipPosRef.current.set(0, 0, 0);
     lastValidTipPosRef.current.set(0, 0, 0);
     depthFusionRef.current.reset(0);
+    setBrushRadius(1.0);
+    setTelemetry((prev) => ({
+      ...prev,
+      roll: 0,
+      pitch: 0,
+      yaw: 0,
+    }));
+    recalibrateDepthRef.current();
     sendCommand('Z\n', true);
     triggerHaptic(200, 100);
     audioHaptics.playCollisionThud(1.0);

@@ -198,12 +198,15 @@ void loop() {
   float gyroRateY = rawGyY / 131.0f;
   float gyroRateZ = rawGyZ / 131.0f;
 
-  float accPitch = atan2(-ax, sqrt(ay * ay + az * az)) * 57.29578f;
-  float accRoll  = atan2(ay, az) * 57.29578f;
+  // Physical Wand Orientation Alignment:
+  // - Pitch: Tilting the wand tip up and down (rotation around X-axis)
+  // - Roll:  Twisting the wand barrel between fingers (rotation around Y-axis)
+  // - Yaw:   Sweeping the wand tip left and right (rotation around Z-axis)
+  float accPitch = atan2(ay, az) * 57.29578f;
+  float accRoll  = atan2(-ax, sqrt(ay * ay + az * az)) * 57.29578f;
 
-  // Complementary filter (98% gyro integration, 2% accelerometer correction)
-  roll  = 0.98f * (roll + gyroRateX * dt) + 0.02f * accRoll;
-  pitch = 0.98f * (pitch + gyroRateY * dt) + 0.02f * accPitch;
+  pitch = 0.98f * (pitch + gyroRateX * dt) + 0.02f * accPitch;
+  roll  = 0.98f * (roll + gyroRateY * dt) + 0.02f * accRoll;
   yaw   = yaw + gyroRateZ * dt;
 
   // 5. Emit Telemetry at 100 Hz (every 10 ms)
