@@ -13,6 +13,7 @@ import { BottomHUD } from './components/HUD/BottomHUD';
 import { EventLog } from './components/HUD/EventLog';
 import { StartScreen } from './components/StartScreen';
 import { RotatingBackground } from './components/RotatingBackground';
+import { WorldOriginCursor } from './components/WorldOriginCursor';
 
 import { SculptMode } from './modes/SculptMode';
 import { TextureLabMode } from './modes/TextureLabMode';
@@ -499,6 +500,9 @@ export default function App() {
               <RotatingBackground />
             ) : (
               <>
+                {/* Blender-Style World Origin Circle & Dynamic Z-Depth Drop-Line */}
+                <WorldOriginCursor wandTipPosRef={wandTipPosRef} />
+
                 {/* 3D Wand Mesh */}
                 <Wand3D
                   positionRef={wandPosRef}

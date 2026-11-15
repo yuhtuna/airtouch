@@ -137,9 +137,12 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
             const rawX = (mirroredX - canvas.width / 2) / 45.0; // Stage X mapping
             const rawY = -(blobY - canvas.height / 2) / 45.0; // Stage Y mapping
 
-            // Apparent radius to Depth Z (more pixels = closer wand)
+            // Enhanced 3D Depth Z Mapping:
+            // Baseline LED radius ~1.6 at normal arm's length -> Z = 0 (World Origin)
+            // Bringing LED closer (radius up to 3.5+) -> moves forward towards viewer (+2.8m)
+            // Extending LED away (radius down to 1.1) -> moves deep into screen (-3.2m)
             const apparentRadius = Math.sqrt(count / Math.PI);
-            const rawZ = Math.max(-2.5, Math.min(3.5, (apparentRadius - 5.0) * 0.35));
+            const rawZ = Math.max(-3.2, Math.min(2.8, (apparentRadius - 1.6) * 2.2));
 
             // Smooth using 1-Euro Filter with zero perceived latency
             const [smoothX, smoothY, smoothZ] = filterRef.current.filter(

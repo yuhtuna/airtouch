@@ -17,154 +17,151 @@ export const BottomHUD: React.FC<BottomHUDProps> = ({
   activeMode,
   sculptTool,
   trackingSource,
-  onToggleTool,
-  onSpawn,
 }) => {
   return (
-    <footer className="pointer-events-none z-20 absolute bottom-5 inset-x-6 flex items-end justify-between">
+    <footer className="pointer-events-none z-20 absolute bottom-6 inset-x-6 flex items-end justify-between select-none">
       {/* Left: Orientation & Angular Readout */}
-      <div className="pointer-events-auto glass-panel p-3.5 rounded-xl flex items-center gap-5 shadow-2xl">
+      <div className="pointer-events-auto glass-panel px-5 py-3.5 rounded-2xl flex items-center gap-6 shadow-2xl border border-slate-700/80 bg-slate-950/85">
         <div className="flex flex-col">
-          <span className="text-[10px] font-mono font-semibold uppercase tracking-wider text-slate-400">
+          <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400">
             Wand Angles
           </span>
-          <div className="flex items-center gap-3 mt-1 font-mono text-xs">
+          <div className="flex items-center gap-3.5 mt-1 font-mono text-sm">
             <div>
-              <span className="text-slate-500 mr-1">R</span>
-              <b className="text-sky-400 font-bold">{telemetry.roll.toFixed(1)}°</b>
+              <span className="text-slate-400 mr-1.5 font-bold">R</span>
+              <b className="text-sky-400 font-extrabold">{telemetry.roll.toFixed(1)}°</b>
             </div>
-            <div className="w-[1px] h-3 bg-slate-700" />
+            <div className="w-[1px] h-4 bg-slate-700" />
             <div>
-              <span className="text-slate-500 mr-1">P</span>
-              <b className="text-purple-400 font-bold">{telemetry.pitch.toFixed(1)}°</b>
+              <span className="text-slate-400 mr-1.5 font-bold">P</span>
+              <b className="text-purple-400 font-extrabold">{telemetry.pitch.toFixed(1)}°</b>
             </div>
-            <div className="w-[1px] h-3 bg-slate-700" />
+            <div className="w-[1px] h-4 bg-slate-700" />
             <div>
-              <span className="text-slate-500 mr-1">Y</span>
-              <b className="text-emerald-400 font-bold">{telemetry.yaw.toFixed(1)}°</b>
+              <span className="text-slate-400 mr-1.5 font-bold">Y</span>
+              <b className="text-emerald-400 font-extrabold">{telemetry.yaw.toFixed(1)}°</b>
             </div>
           </div>
         </div>
 
-        <div className="w-[1px] h-8 bg-slate-800" />
+        <div className="w-[1px] h-9 bg-slate-800" />
 
         {/* Tracking Source Status */}
         <div className="flex flex-col">
-          <span className="text-[10px] font-mono font-semibold uppercase tracking-wider text-slate-400">
+          <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400">
             Tracking Source
           </span>
-          <div className="flex items-center gap-1.5 mt-1 font-mono text-xs">
+          <div className="flex items-center gap-2 mt-1 font-mono text-sm">
             <span
-              className={`h-2 w-2 rounded-full ${
+              className={`h-2.5 w-2.5 rounded-full ${
                 trackingSource === 'WEBCAM'
-                  ? 'bg-emerald-400'
+                  ? 'bg-emerald-400 shadow-md shadow-emerald-400/50'
                   : trackingSource === 'IMU_RAYCASTER'
-                  ? 'bg-sky-400'
+                  ? 'bg-sky-400 shadow-md shadow-sky-400/50'
                   : 'bg-amber-400'
               }`}
             />
-            <span className="font-semibold text-slate-200">
+            <span className="font-bold text-slate-100">
               {trackingSource === 'WEBCAM'
-                ? '60 FPS Webcam'
+                ? '60 FPS Optical Webcam'
                 : trackingSource === 'IMU_RAYCASTER'
                 ? 'IMU Laser Ray'
-                : 'Demo Sim'}
+                : 'Demo Simulation'}
             </span>
           </div>
         </div>
       </div>
 
-      {/* Center: Mode Specific Hint Pill & Tool Toggle */}
-      <div className="pointer-events-auto glass-panel px-4 py-2 rounded-xl flex flex-col items-center gap-1 text-xs font-medium text-slate-300 shadow-xl border border-slate-700/60">
+      {/* Center: BIG CLEAR ACTION GUIDANCE CARD */}
+      <div className="pointer-events-auto glass-panel px-6 py-3 rounded-2xl flex flex-col items-center gap-1.5 shadow-2xl border border-slate-700/80 bg-slate-950/90 max-w-2xl text-center">
+        {/* Mode Action Headline */}
         <div>
-        {activeMode === 'SCULPT' && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onToggleTool}
-              className={`px-2 py-0.5 rounded text-[11px] font-semibold border transition-all ${
-                sculptTool === 'DRAW'
-                  ? 'bg-sky-500/20 text-sky-300 border-sky-500/40'
-                  : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-              }`}
-            >
-              Tool: {sculptTool} (Click to toggle)
-            </button>
-            <span className="text-slate-400">
-              Hold <b className="text-rose-400">Trigger</b> to {sculptTool === 'DRAW' ? 'extrude 3D tube' : 'erase stroke'} • Twist wrist for radius
-            </span>
-          </div>
-        )}
-        {activeMode === 'TEXTURE_LAB' && (
-          <span>Hover wand tip over material spheres to experience physical surface waveforms & LED sync</span>
-        )}
-        {activeMode === 'CAD_SLICER' && (
-          <span>Tilt wand wrist to rotate cross-section clipping plane • Hold trigger to explode parts</span>
-        )}
-        {activeMode === 'PHYSICS' && (
-          <div className="flex items-center gap-2">
-            <span className="text-slate-300 font-medium">Spawn:</span>
-            <button
-              onClick={() => onSpawn?.('cube')}
-              className="px-2 py-0.5 rounded text-[11px] font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/40 hover:bg-sky-500/30 transition-all pointer-events-auto"
-            >
-              + Cube
-            </button>
-            <button
-              onClick={() => onSpawn?.('sphere')}
-              className="px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/40 hover:bg-purple-500/30 transition-all pointer-events-auto"
-            >
-              + Sphere
-            </button>
-            <button
-              onClick={() => onSpawn?.('gear')}
-              className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition-all pointer-events-auto"
-            >
-              + Gear
-            </button>
-            <span className="text-slate-400 ml-1">Bat them around with the wand!</span>
-          </div>
-        )}
+          {activeMode === 'SCULPT' && (
+            <div className="text-sm font-extrabold text-sky-400 flex items-center justify-center gap-2">
+              <span>MODE 1: 3D SCULPTING — FREEHAND AIR-DRAWING</span>
+            </div>
+          )}
+          {activeMode === 'TEXTURE_LAB' && (
+            <div className="text-sm font-extrabold text-purple-400 flex items-center justify-center gap-2">
+              <span>MODE 2: HAPTIC TEXTURE LAB — TACTILE SIMULATION</span>
+            </div>
+          )}
+          {activeMode === 'CAD_SLICER' && (
+            <div className="text-sm font-extrabold text-amber-400 flex items-center justify-center gap-2">
+              <span>MODE 3: CAD SLICER — GEARBOX CROSS-SECTION INSPECTOR</span>
+            </div>
+          )}
+          {activeMode === 'PHYSICS' && (
+            <div className="text-sm font-extrabold text-emerald-400 flex items-center justify-center gap-2">
+              <span>MODE 4: PHYSICS ARENA — INTERACTIVE IMPACT COLLISION</span>
+            </div>
+          )}
         </div>
-        <div className="text-[10px] text-slate-400 font-mono flex items-center gap-2 border-t border-slate-800/80 pt-1 w-full justify-center">
-          <span><b className="text-sky-300">Double-Click Button</b> or <b className="text-sky-300">Tab / 1-4</b>: Switch Mode</span>
+
+        {/* Clear Action Instruction */}
+        <div className="text-xs md:text-sm font-medium text-slate-200 leading-snug">
+          {activeMode === 'SCULPT' && (
+            <span>
+              Hold <b className="text-rose-400 font-bold">Wand Trigger</b> (or click canvas) to{' '}
+              <b className="text-sky-300 font-bold">{sculptTool === 'DRAW' ? 'extrude 3D tube' : 'erase strokes'}</b>. Twist wrist to scale brush size.
+            </span>
+          )}
+          {activeMode === 'TEXTURE_LAB' && (
+            <span>
+              Hover wand tip over the <b className="text-purple-300 font-bold">4 material spheres</b> (Ice, Sandpaper, Metal, Rubber) to feel distinct physical vibrations on your Arduino Nano.
+            </span>
+          )}
+          {activeMode === 'CAD_SLICER' && (
+            <span>
+              <b className="text-amber-300 font-bold">Tilt wand wrist</b> to rotate real-time 3D slicing knife plane. <b className="text-rose-400 font-bold">Hold trigger</b> to explode gearbox.
+            </span>
+          )}
+          {activeMode === 'PHYSICS' && (
+            <span>
+              Click buttons to spawn shapes, then <b className="text-emerald-300 font-bold">swing your wand tip like a bat</b> to strike them! Feel physical haptic recoil on impact.
+            </span>
+          )}
+        </div>
+
+        {/* Persistent Keyboard & Wand Hardware Controls */}
+        <div className="text-xs text-slate-400 font-mono flex items-center gap-2.5 border-t border-slate-800 pt-1.5 w-full justify-center">
+          <span><b className="text-sky-300 font-bold">Double-Click Wand Button</b> or <b className="text-sky-300 font-bold">Tab / 1-4</b>: Switch Mode</span>
           <span className="text-slate-600">•</span>
-          <span><b className="text-sky-300">Long-Press (&gt;1s)</b> or <b className="text-sky-300">Space</b>: Recenter</span>
+          <span><b className="text-sky-300 font-bold">Long-Press (&gt;1s)</b> or <b className="text-sky-300 font-bold">Space</b>: Recenter</span>
         </div>
       </div>
 
-      {/* Right: Trigger & Dial Status */}
-      <div className="pointer-events-auto glass-panel p-3.5 rounded-xl flex items-center gap-5 shadow-2xl">
+      {/* Right: Primary Trigger & Dial Brush Status */}
+      <div className="pointer-events-auto glass-panel px-5 py-3.5 rounded-2xl flex items-center gap-6 shadow-2xl border border-slate-700/80 bg-slate-950/85">
         {/* Trigger State */}
         <div className="flex flex-col">
-          <span className="text-[10px] font-mono font-semibold uppercase tracking-wider text-slate-400">
+          <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400">
             Primary Trigger
           </span>
           <div className="flex items-center gap-2 mt-1">
             <span
-              className={`h-2.5 w-2.5 rounded-full ${
-                telemetry.btn === 1 ? 'bg-rose-500 shadow-rose-500/50 shadow-sm animate-pulse' : 'bg-slate-600'
+              className={`h-3 w-3 rounded-full ${
+                telemetry.btn === 1
+                  ? 'bg-rose-500 shadow-md shadow-rose-500/60 animate-pulse'
+                  : 'bg-slate-600'
               }`}
             />
-            <span className="font-mono text-xs font-semibold">
-              {telemetry.btn === 1 ? (
-                <span className="text-rose-400">ACTIVE</span>
-              ) : (
-                <span className="text-slate-400">HOVER</span>
-              )}
+            <span className={`text-sm font-black font-mono ${telemetry.btn === 1 ? 'text-rose-400' : 'text-slate-300'}`}>
+              {telemetry.btn === 1 ? 'HELD (ACTIVE)' : 'RELEASED'}
             </span>
           </div>
         </div>
 
-        <div className="w-[1px] h-8 bg-slate-800" />
+        <div className="w-[1px] h-9 bg-slate-800" />
 
-        {/* Brush Dial */}
+        {/* Dial Brush Status */}
         <div className="flex flex-col">
-          <span className="text-[10px] font-mono font-semibold uppercase tracking-wider text-slate-400">
-            Wrist Dial (Roll)
+          <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400">
+            Wrist Dial Radius
           </span>
-          <div className="flex items-center gap-1.5 mt-1 font-mono text-xs">
-            <span className="text-amber-400 font-bold">{brushRadius.toFixed(2)}x</span>
-            <span className="text-[11px] text-slate-500">radius</span>
+          <div className="mt-1 font-mono text-sm">
+            <span className="text-sky-400 font-black text-base">{brushRadius.toFixed(1)}x</span>
+            <span className="text-slate-400 text-xs ml-1.5">scale</span>
           </div>
         </div>
       </div>
