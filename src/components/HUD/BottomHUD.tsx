@@ -130,7 +130,7 @@ export const BottomHUD: React.FC<BottomHUDProps> = ({
           )}
           {activeMode === 'TEXTURE_LAB' && (
             <span>
-              Hover wand tip over the <b className="text-purple-300 font-bold">4 material spheres</b> (Ice, Sandpaper, Metal, Rubber) to feel distinct physical vibrations on your Arduino Nano.
+              Touch or aim wand at the <b className="text-purple-300 font-bold">4 material spheres</b> and <b className="text-rose-400 font-bold">press wand button</b> (or stroke across) to feel distinct tactile vibrations on your Arduino Nano.
             </span>
           )}
           {activeMode === 'CAD_SLICER' && (

@@ -774,7 +774,10 @@ export default function App() {
 
                 {activeMode === 'TEXTURE_LAB' && (
                   <TextureLabMode
+                    wandRotRef={wandRotRef}
                     wandTipPosRef={wandTipPosRef}
+                    isTriggerHeld={isTriggerHeld}
+                    isTriggerHeldRef={isTriggerHeldRef}
                     sendSerial={sendCommand}
                     triggerHaptic={triggerHaptic}
                   />

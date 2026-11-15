@@ -12,8 +12,9 @@
 #include <Wire.h>
 
 const int MPU_ADDR = 0x68;
-const int buttonPin = 2; // Pushbutton on Pin 2
-const int motorPin  = 3; // Vibration motor on Pin 3 (PWM)
+const int buttonPin   = 2; // Pushbutton on Pin 2 (Active LOW)
+const int motorPin    = 3; // Vibration motor primary PWM on Pin 3 (Timer 2)
+const int motorPinAlt = 9; // Vibration motor alternate PWM on Pin 9 (Timer 1 per ARCHITECTURE.md)
 
 // Orientation tracking (Complementary Filter)
 float roll = 0.0f;
@@ -61,12 +62,15 @@ void parseSerialCommand(const char* cmd) {
 
       pwm = constrain(pwm, 0, 255);
       analogWrite(motorPin, pwm);
+      analogWrite(motorPinAlt, pwm);
 
       if (pwm > 0 && duration > 0) {
         hapticEndTime = millis() + duration;
         hapticActive = true;
       } else {
         hapticActive = false;
+        analogWrite(motorPin, 0);
+        analogWrite(motorPinAlt, 0);
       }
     }
   } else if (type == 'Z') {
@@ -132,7 +136,9 @@ void setup() {
 
   pinMode(buttonPin, INPUT_PULLUP);
   pinMode(motorPin, OUTPUT);
+  pinMode(motorPinAlt, OUTPUT);
   analogWrite(motorPin, 0);
+  analogWrite(motorPinAlt, 0);
 
   // Wake up the MPU-6050
   Wire.beginTransmission(MPU_ADDR);
@@ -144,10 +150,12 @@ void setup() {
     Serial.println(F("ERR: MPU-6050 not responding at 0x68. Check A4(SDA) and A5(SCL)"));
   }
 
-  // Startup haptic confirmation chirp
-  analogWrite(motorPin, 120);
-  delay(80);
+  // Startup haptic confirmation chirp (strong 200 PWM on both Pin 3 & Pin 9)
+  analogWrite(motorPin, 200);
+  analogWrite(motorPinAlt, 200);
+  delay(120);
   analogWrite(motorPin, 0);
+  analogWrite(motorPinAlt, 0);
 
   lastImuTime = micros();
   lastTelemetryTime = millis();
@@ -160,6 +168,7 @@ void loop() {
   // 2. Non-blocking haptic timer
   if (hapticActive && millis() >= hapticEndTime) {
     analogWrite(motorPin, 0);
+    analogWrite(motorPinAlt, 0);
     hapticActive = false;
   }
 

@@ -6,89 +6,146 @@ import { MATERIAL_PRESETS } from '../lib/hapticPatterns';
 import { audioHaptics } from '../lib/audioHaptics';
 
 interface TextureLabModeProps {
+  wandRotRef?: React.RefObject<[number, number, number]>;
   wandTipPosRef: React.RefObject<THREE.Vector3>;
+  isTriggerHeld?: boolean;
+  isTriggerHeldRef?: React.RefObject<boolean>;
   sendSerial: (cmd: string) => void;
   triggerHaptic: (pwm: number, ms: number) => void;
 }
 
 export const TextureLabMode: React.FC<TextureLabModeProps> = ({
+  wandRotRef,
   wandTipPosRef,
+  isTriggerHeld = false,
+  isTriggerHeldRef,
   sendSerial,
   triggerHaptic,
 }) => {
   const [activeMaterialId, setActiveMaterialId] = useState<string | null>(null);
   const lastTipPosRef = useRef(new THREE.Vector3());
   const hapticCooldownRef = useRef(0);
-  const corrugatedDistanceRef = useRef(0);
 
+  // Position spheres within physical reaching envelope of the wand tip
   const spherePositions: [number, number, number][] = [
-    [-3.75, 0.35, -0.35],
-    [-1.25, 0.35, 0.15],
-    [1.25, 0.35, 0.15],
-    [3.75, 0.35, -0.35],
+    [-2.7, 0.25, 0.35],
+    [-0.9, 0.25, 0.75],
+    [0.9, 0.25, 0.75],
+    [2.7, 0.25, 0.35],
   ];
 
-  const sphereRadius = 1.20;
-  const detectionRadius = 1.28;
+  const sphereRadius = 1.15;
 
   useFrame((_, delta) => {
     const tipPos = wandTipPosRef.current || new THREE.Vector3();
+    const rot = wandRotRef?.current || [0, 0, 0];
+    const activeTrigger = Boolean((isTriggerHeldRef && isTriggerHeldRef.current) || isTriggerHeld);
 
     // Calculate wand tip velocity
     const velocity = tipPos.distanceTo(lastTipPosRef.current) / Math.max(delta, 0.001);
-    const speed = Math.min(velocity, 5.0); // clamp
+    const speed = Math.min(velocity, 5.0);
     lastTipPosRef.current.copy(tipPos);
 
-    hapticCooldownRef.current += delta;
-    let hitAny = false;
+    // Calculate forward pointing vector from wand Euler orientation (YXZ)
+    const euler = new THREE.Euler(
+      (rot[0] * Math.PI) / 180,
+      (rot[1] * Math.PI) / 180,
+      (rot[2] * Math.PI) / 180,
+      'YXZ'
+    );
+    const forwardDir = new THREE.Vector3(0, 0, 1).applyEuler(euler);
+
+    let bestSphereIdx = -1;
+    let minAimScore = Infinity;
 
     spherePositions.forEach((pos, idx) => {
       const sphereCenter = new THREE.Vector3(...pos);
-      const dist = tipPos.distanceTo(sphereCenter);
+      const distToTip = tipPos.distanceTo(sphereCenter);
 
-      if (dist < detectionRadius) {
-        hitAny = true;
-        const mat = MATERIAL_PRESETS[idx];
-
-        // On first contact with new material sphere: set tip LED color matching material
-        if (activeMaterialId !== mat.id) {
-          setActiveMaterialId(mat.id);
-          const [r, g, b] = mat.ledColor;
-          sendSerial(`C,${r},${g},${b}\n`);
+      // 1. Direct physical 3D touch / penetration
+      if (distToTip < sphereRadius + 0.35) {
+        if (distToTip < minAimScore) {
+          minAimScore = distToTip;
+          bestSphereIdx = idx;
         }
-
-        // Texture-specific dynamic waveform generation
-        if (hapticCooldownRef.current > 0.04) {
-          hapticCooldownRef.current = 0;
-
-          if (mat.id === 'ice') {
-            const pwm = Math.round(25 + speed * 15);
-            triggerHaptic(pwm, 20);
-            audioHaptics.playTextureWaveform('ice');
-          } else if (mat.id === 'sandpaper') {
-            const jitter = Math.random() * 40;
-            const pwm = Math.round(140 + speed * 25 + jitter);
-            triggerHaptic(pwm, 30);
-            audioHaptics.playTextureWaveform('sandpaper');
-          } else if (mat.id === 'metal') {
-            corrugatedDistanceRef.current += speed * delta;
-            if (corrugatedDistanceRef.current > 0.03) {
-              corrugatedDistanceRef.current = 0;
-              triggerHaptic(220, 15); // sharp ridge click
-              audioHaptics.playTextureWaveform('metal');
+      } else {
+        // 2. Optical / IMU forward raycast targeting (when pointing at sphere)
+        const toSphere = sphereCenter.clone().sub(tipPos);
+        const distAlongRay = toSphere.dot(forwardDir);
+        if (distAlongRay > 0.2 && distAlongRay < 5.0) {
+          const closestPointOnRay = tipPos.clone().addScaledVector(forwardDir, distAlongRay);
+          const perpDist = closestPointOnRay.distanceTo(sphereCenter);
+          if (perpDist < sphereRadius + 0.45) {
+            const score = perpDist + distAlongRay * 0.15;
+            if (score < minAimScore) {
+              minAimScore = score;
+              bestSphereIdx = idx;
             }
-          } else if (mat.id === 'rubber') {
-            const pwm = Math.round(70 + speed * 20);
-            triggerHaptic(pwm, 60);
-            audioHaptics.playTextureWaveform('rubber');
           }
         }
       }
     });
 
-    if (!hitAny && activeMaterialId !== null) {
-      setActiveMaterialId(null);
-      sendSerial('C,0,255,255\n'); // Return tip beacon to default bright cyan
+    if (bestSphereIdx !== -1) {
+      const mat = MATERIAL_PRESETS[bestSphereIdx];
+
+      // Sync LED optical color to current material
+      if (activeMaterialId !== mat.id) {
+        setActiveMaterialId(mat.id);
+        const [r, g, b] = mat.ledColor;
+        sendSerial(`C,${r},${g},${b}\n`);
+      }
+
+      hapticCooldownRef.current += delta;
+
+      // ========================================================
+      // PRIMARY INTERACTION: BUTTON PRESSED / HELD ON SPHERE
+      // ========================================================
+      if (activeTrigger) {
+        if (hapticCooldownRef.current > 0.05) {
+          hapticCooldownRef.current = 0;
+
+          if (mat.id === 'ice') {
+            // Slick, smooth high-frequency vibration
+            triggerHaptic(170, 55);
+            audioHaptics.playTextureWaveform('ice');
+          } else if (mat.id === 'sandpaper') {
+            // Rough, aggressive granular friction buzz
+            const jitter = Math.round(Math.random() * 35);
+            triggerHaptic(220 + jitter, 55);
+            audioHaptics.playTextureWaveform('sandpaper');
+          } else if (mat.id === 'metal') {
+            // Heavy crisp detent ridge pulses
+            triggerHaptic(255, 45);
+            audioHaptics.playTextureWaveform('metal');
+          } else if (mat.id === 'rubber') {
+            // Deep viscoelastic drag buzz
+            triggerHaptic(195, 75);
+            audioHaptics.playTextureWaveform('rubber');
+          }
+        }
+      } else {
+        // Hover / Stroke across surface without pressing button
+        if (speed > 0.15 && hapticCooldownRef.current > 0.06) {
+          hapticCooldownRef.current = 0;
+          const hapticPwm =
+            mat.id === 'ice'
+              ? 140
+              : mat.id === 'sandpaper'
+              ? 200
+              : mat.id === 'metal'
+              ? 240
+              : 175;
+          triggerHaptic(hapticPwm, 45);
+          audioHaptics.playTextureWaveform(mat.id as any);
+        }
+      }
+    } else {
+      if (activeMaterialId !== null) {
+        setActiveMaterialId(null);
+        sendSerial('C,0,255,255\n'); // Return tip beacon to default bright cyan
+        triggerHaptic(0, 0);
+      }
     }
   });
 
