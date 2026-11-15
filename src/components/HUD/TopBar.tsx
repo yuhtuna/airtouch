@@ -83,7 +83,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               ? 'bg-slate-900/80 border border-emerald-500/40 text-emerald-300'
               : 'bg-amber-500/20 border border-amber-400/80 text-amber-200 animate-pulse hover:bg-amber-500/30 shadow-lg shadow-amber-500/20'
           }`}
-          title={connected ? 'Arduino Nano connected on COM6' : 'Click to connect Arduino Nano on COM6'}
+          title={connected ? 'Click to disconnect Arduino Nano (releases COM6 port for flashing)' : 'Click to connect Arduino Nano on COM6'}
         >
           <span
             className={`w-2.5 h-2.5 rounded-full ${
@@ -93,7 +93,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             }`}
           />
           <span className="font-bold tracking-wide">
-            {connected ? 'NANO ONLINE' : 'CONNECT NANO'}
+            {connected ? 'NANO ONLINE (CLICK TO DISCONNECT)' : 'CONNECT NANO'}
           </span>
         </button>
       </div>

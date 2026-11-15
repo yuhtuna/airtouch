@@ -16,10 +16,17 @@ const int buttonPin   = 2; // Pushbutton on Pin 2 (Active LOW)
 const int motorPin    = 3; // Vibration motor primary PWM on Pin 3 (Timer 2)
 const int motorPinAlt = 9; // Vibration motor alternate PWM on Pin 9 (Timer 1 per ARCHITECTURE.md)
 
+// MPU-6050 State & Auto-Reconnect Recovery
+bool mpuConnected = false;
+unsigned long lastMpuRetryTime = 0;
+
 // Orientation tracking (Complementary Filter)
 float roll = 0.0f;
 float pitch = 0.0f;
 float yaw = 0.0f;
+float ax = 0.0f;
+float ay = 0.0f;
+float az = 9.80665f;
 
 float rollOffset = 0.0f;
 float pitchOffset = 0.0f;
@@ -47,6 +54,26 @@ uint8_t pendingClickEvent = 0;
 // Non-blocking Serial Buffer (32 bytes to preserve ATmega328P SRAM)
 char serialBuffer[32];
 uint8_t serialBufferIdx = 0;
+
+bool initMPU() {
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(0x6B); // PWR_MGMT_1 register
+  Wire.write(0);    // Wake up MPU-6050 (clear SLEEP bit)
+  byte err = Wire.endTransmission(true);
+
+  if (err == 0) {
+    // Configure Digital Low Pass Filter (DLPF = 42Hz) to suppress motor vibration spikes
+    Wire.beginTransmission(MPU_ADDR);
+    Wire.write(0x1A); // CONFIG
+    Wire.write(0x03); // 42Hz bandwidth filter
+    Wire.endTransmission(true);
+
+    mpuConnected = true;
+    return true;
+  }
+  mpuConnected = false;
+  return false;
+}
 
 void parseSerialCommand(const char* cmd) {
   if (cmd == NULL || cmd[0] == '\0') return;
@@ -133,6 +160,7 @@ void setup() {
   Serial.begin(115200);
   Wire.begin();
   Wire.setClock(400000L); // 400kHz fast I2C
+  Wire.setWireTimeout(25000, true); // 25ms timeout, reset I2C hardware on hang
 
   pinMode(buttonPin, INPUT_PULLUP);
   pinMode(motorPin, OUTPUT);
@@ -140,14 +168,9 @@ void setup() {
   analogWrite(motorPin, 0);
   analogWrite(motorPinAlt, 0);
 
-  // Wake up the MPU-6050
-  Wire.beginTransmission(MPU_ADDR);
-  Wire.write(0x6B); // PWR_MGMT_1 register
-  Wire.write(0);    // Set to 0 to wake up MPU-6050
-  byte err = Wire.endTransmission(true);
-
-  if (err != 0) {
-    Serial.println(F("ERR: MPU-6050 not responding at 0x68. Check A4(SDA) and A5(SCL)"));
+  // Initialize MPU-6050 with auto-recovery
+  if (!initMPU()) {
+    Serial.println(F("ERR: MPU-6050 offline at startup. Auto-reconnect enabled."));
   }
 
   // Startup haptic confirmation chirp (strong 200 PWM on both Pin 3 & Pin 9)
@@ -175,7 +198,9 @@ void loop() {
   // 3. Update button state
   updateButtonState();
 
-  // 4. Read MPU-6050 sensor data (Burst read 14 bytes)
+  unsigned long nowMillis = millis();
+
+  // 4. Read MPU-6050 sensor data with Fault-Tolerant Auto-Reconnect
   unsigned long nowMicros = micros();
   float dt = (nowMicros - lastImuTime) / 1000000.0f;
   if (dt <= 0.0f || dt > 0.1f) dt = 0.01f;
@@ -186,9 +211,10 @@ void loop() {
 
   Wire.beginTransmission(MPU_ADDR);
   Wire.write(0x3B);
-  Wire.endTransmission(false);
+  byte txErr = Wire.endTransmission(false);
 
-  if (Wire.requestFrom(MPU_ADDR, 14, true) == 14) {
+  if (txErr == 0 && Wire.requestFrom(MPU_ADDR, 14, true) == 14) {
+    mpuConnected = true;
     rawAcX = (Wire.read() << 8) | Wire.read();
     rawAcY = (Wire.read() << 8) | Wire.read();
     rawAcZ = (Wire.read() << 8) | Wire.read();
@@ -196,30 +222,36 @@ void loop() {
     rawGyX = (Wire.read() << 8) | Wire.read();
     rawGyY = (Wire.read() << 8) | Wire.read();
     rawGyZ = (Wire.read() << 8) | Wire.read();
+
+    // Convert raw values (±2g range: 16384 LSB/g, ±250 deg/s range: 131.0 LSB/deg/s)
+    ax = (rawAcX / 16384.0f) * 9.80665f; // m/s^2
+    ay = (rawAcY / 16384.0f) * 9.80665f;
+    az = (rawAcZ / 16384.0f) * 9.80665f;
+
+    float gyroRateX = rawGyX / 131.0f; // deg/s
+    float gyroRateY = rawGyY / 131.0f;
+    float gyroRateZ = rawGyZ / 131.0f;
+
+    // Physical Wand Orientation Alignment:
+    // - Pitch: Tilting the wand tip up and down (rotation around X-axis)
+    // - Roll:  Twisting the wand barrel between fingers (rotation around Y-axis)
+    // - Yaw:   Sweeping the wand tip left and right (rotation around Z-axis)
+    float accPitch = atan2(ay, az) * 57.29578f;
+    float accRoll  = atan2(-ax, sqrt(ay * ay + az * az)) * 57.29578f;
+
+    pitch = 0.98f * (pitch + gyroRateX * dt) + 0.02f * accPitch;
+    roll  = 0.98f * (roll + gyroRateY * dt) + 0.02f * accRoll;
+    yaw   = yaw + gyroRateZ * dt;
+  } else {
+    mpuConnected = false;
+    // Periodic auto-reconnect retry every 250ms when I2C communication drops
+    if (nowMillis - lastMpuRetryTime >= 250) {
+      lastMpuRetryTime = nowMillis;
+      initMPU();
+    }
   }
 
-  // Convert raw values (±2g range: 16384 LSB/g, ±250 deg/s range: 131.0 LSB/deg/s)
-  float ax = (rawAcX / 16384.0f) * 9.80665f; // m/s^2
-  float ay = (rawAcY / 16384.0f) * 9.80665f;
-  float az = (rawAcZ / 16384.0f) * 9.80665f;
-
-  float gyroRateX = rawGyX / 131.0f; // deg/s
-  float gyroRateY = rawGyY / 131.0f;
-  float gyroRateZ = rawGyZ / 131.0f;
-
-  // Physical Wand Orientation Alignment:
-  // - Pitch: Tilting the wand tip up and down (rotation around X-axis)
-  // - Roll:  Twisting the wand barrel between fingers (rotation around Y-axis)
-  // - Yaw:   Sweeping the wand tip left and right (rotation around Z-axis)
-  float accPitch = atan2(ay, az) * 57.29578f;
-  float accRoll  = atan2(-ax, sqrt(ay * ay + az * az)) * 57.29578f;
-
-  pitch = 0.98f * (pitch + gyroRateX * dt) + 0.02f * accPitch;
-  roll  = 0.98f * (roll + gyroRateY * dt) + 0.02f * accRoll;
-  yaw   = yaw + gyroRateZ * dt;
-
   // 5. Emit Telemetry at 100 Hz (every 10 ms)
-  unsigned long nowMillis = millis();
   if (nowMillis - lastTelemetryTime >= 10) {
     lastTelemetryTime = nowMillis;
 

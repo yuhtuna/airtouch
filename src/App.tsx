@@ -709,7 +709,7 @@ export default function App() {
           wireframe={clayWireframe}
           onToggleWireframe={() => setClayWireframe((prev) => !prev)}
           onSpawnPhysics={handleSpawn}
-          onConnect={connect}
+          onConnect={connected ? disconnect : connect}
         />
       )}
 
