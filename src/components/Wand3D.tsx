@@ -13,24 +13,61 @@ export const Wand3D = React.forwardRef<THREE.Group, Wand3DProps>(
   ({ positionRef, rotationRef, isPressed, brushRadius }, ref) => {
     const internalRef = useRef<THREE.Group>(null);
     const targetGroup = (ref as React.RefObject<THREE.Group>) || internalRef;
+    const lastPosRef = useRef<THREE.Vector3>(new THREE.Vector3());
+    const smoothVelRef = useRef<THREE.Vector3>(new THREE.Vector3());
 
-    useFrame(() => {
+    useFrame((state, delta) => {
       if (targetGroup.current) {
         const pos = positionRef.current || [0, 0, 0];
         const rot = rotationRef.current || [0, 0, 0];
 
         // Smooth lerp to live reference position
-        targetGroup.current.position.lerp(new THREE.Vector3(pos[0], pos[1], pos[2]), 0.4);
+        const targetPos = new THREE.Vector3(pos[0], pos[1], pos[2]);
+        targetGroup.current.position.lerp(targetPos, 0.45);
 
-        // Smooth slerp to live reference rotation
-        const targetEuler = new THREE.Euler(
-          (rot[0] * Math.PI) / 180, // Pitch (X)
-          (rot[1] * Math.PI) / 180, // Yaw (Y)
-          (rot[2] * Math.PI) / 180, // Roll (Z)
-          'YXZ'
-        );
+        // Compute 3D translation velocity for dynamic banking & tilt animation
+        const dt = Math.max(0.012, Math.min(0.05, delta));
+        const instantVel = targetPos.clone().sub(lastPosRef.current).divideScalar(dt);
+        lastPosRef.current.copy(targetPos);
+        smoothVelRef.current.lerp(instantVel, 0.25);
+        const vel = smoothVelRef.current;
+
+        // Check if physical hardware IMU is actively streaming non-zero angles
+        const hasHardwareIMU =
+          Math.abs(rot[0]) > 0.08 || Math.abs(rot[1]) > 0.08 || Math.abs(rot[2]) > 0.08;
+
+        let targetEuler: THREE.Euler;
+
+        if (hasHardwareIMU) {
+          // 1:1 Direct Physical IMU Orientation
+          targetEuler = new THREE.Euler(
+            (rot[0] * Math.PI) / 180, // Pitch (X)
+            (rot[1] * Math.PI) / 180, // Yaw (Y)
+            (rot[2] * Math.PI) / 180, // Roll (Z)
+            'YXZ'
+          );
+        } else {
+          // Dynamic Motion-Informed Tilt Animation:
+          // Leans and points naturally into velocity vector!
+          const bankRoll = -Math.max(-0.45, Math.min(0.45, vel.x * 0.16));
+          const bankPitch = Math.max(-0.55, Math.min(0.55, -vel.y * 0.18 - vel.z * 0.22));
+          const bankYaw = Math.max(-0.45, Math.min(0.45, vel.x * 0.15));
+
+          // Subtle organic breathing sway so the stylus feels alive
+          const time = state.clock.getElapsedTime();
+          const swayPitch = Math.sin(time * 1.6) * 0.04;
+          const swayYaw = Math.cos(time * 1.2) * 0.035;
+
+          targetEuler = new THREE.Euler(
+            bankPitch + swayPitch,
+            bankYaw + swayYaw,
+            bankRoll,
+            'YXZ'
+          );
+        }
+
         const targetQuat = new THREE.Quaternion().setFromEuler(targetEuler);
-        targetGroup.current.quaternion.slerp(targetQuat, 0.4);
+        targetGroup.current.quaternion.slerp(targetQuat, 0.35);
       }
     });
 

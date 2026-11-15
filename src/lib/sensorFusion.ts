@@ -73,18 +73,14 @@ export class DepthSensorFusion {
     // 4. Transform linear acceleration into world/camera frame
     const linAccWorld = linAccBody.applyQuaternion(quat);
 
-    // Noise gate: ignore small resting sensor noise (< 0.7 m/s^2)
+    // Noise gate: ignore small resting sensor noise (< 1.2 m/s^2)
     let dynamicAz = linAccWorld.z;
-    if (Math.abs(dynamicAz) < 0.7) {
+    if (Math.abs(dynamicAz) < 1.2) {
       dynamicAz = 0;
     }
 
     // 5. Integrate acceleration into dynamic velocity with leaky decay
-    this.velocityZ = (this.velocityZ + dynamicAz * dt) * this.velocityDecay;
-
-    // 6. Apply inertial dynamic impulse to fused depth
-    this.fusedZ += this.velocityZ * dt;
-    this.fusedZ = Math.max(-3.5, Math.min(3.0, this.fusedZ));
+    this.velocityZ = Math.max(-2.0, Math.min(2.0, (this.velocityZ + dynamicAz * dt) * this.velocityDecay));
   }
 
   /**
@@ -98,8 +94,8 @@ export class DepthSensorFusion {
 
     if (isNaN(opticalZ)) return this.fusedZ;
 
-    // Anchor fused position towards drift-free optical ground truth
-    this.fusedZ = this.fusedZ * (1 - this.alpha) + opticalZ * this.alpha;
+    // Optical depth directly anchors position without sluggish lag, plus dynamic inertial thrust boost
+    this.fusedZ = opticalZ + this.velocityZ * 0.12;
     return this.fusedZ;
   }
 

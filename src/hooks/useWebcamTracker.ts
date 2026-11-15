@@ -17,12 +17,14 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
 
   // Auto-calibrated neutral depth baseline for 5mm Blue LED
   const neutralSqrtCountRef = useRef(3.5);
+  const hasAutoCalibratedRef = useRef(false);
   const currentCountRef = useRef(0);
   const lastConfidenceRef = useRef(0);
 
   const recalibrateNeutralDepth = useCallback(() => {
     if (currentCountRef.current >= 4) {
       neutralSqrtCountRef.current = Math.sqrt(currentCountRef.current);
+      hasAutoCalibratedRef.current = true;
       onLog(`Camera Depth Calibrated: Neutral Z set at ${currentCountRef.current}px.`);
     }
   }, [onLog]);
@@ -86,6 +88,7 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
       await videoRef.current.play();
 
       filterRef.current.reset();
+      hasAutoCalibratedRef.current = false;
       setActive(true);
       onLog('Webcam 60 FPS Optical Blob Tracker active (Blue LED Mode).');
 
@@ -150,13 +153,20 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
             const rawX = (mirroredX - canvas.width / 2) / 45.0; // Stage X mapping
             const rawY = -(blobY - canvas.height / 2) / 45.0; // Stage Y mapping
 
+            // Auto-lock neutral depth on first stable detection
+            if (!hasAutoCalibratedRef.current && count >= 8) {
+              neutralSqrtCountRef.current = Math.sqrt(count);
+              hasAutoCalibratedRef.current = true;
+              onLog(`Neutral depth baseline auto-locked at ${count}px.`);
+            }
+
             // Auto-Calibrated Optical 3D Depth (Z):
             // sqrt(count) represents linear apparent diameter of LED.
             // Moving closer expands count -> rawZ moves forward towards user (+Z).
             // Moving away shrinks count -> rawZ moves deep into screen (-Z).
             const currentSqrt = Math.sqrt(count);
             const deltaSqrt = currentSqrt - neutralSqrtCountRef.current;
-            const rawZ = Math.max(-3.5, Math.min(3.0, deltaSqrt * 1.6));
+            const rawZ = Math.max(-3.5, Math.min(3.5, deltaSqrt * 2.8));
 
             // Smooth using 1-Euro Filter with zero perceived latency
             const [smoothX, smoothY, smoothZ] = filterRef.current.filter(
@@ -198,7 +208,15 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
                 const scaleY = monitor.height / canvas.height;
                 const targetX = mirroredX * scaleX;
                 const targetY = blobY * scaleY;
-                const visualRadius = Math.max(10, Math.min(32, Math.sqrt(count / Math.PI) * scaleX * 2));
+
+                // Dynamic target ring radius: grows when closer, shrinks when further!
+                const visualRadius = Math.max(8, Math.min(42, 6 + Math.sqrt(count) * 3.6));
+
+                // Glowing core dot
+                mCtx.fillStyle = '#38bdf8';
+                mCtx.beginPath();
+                mCtx.arc(targetX, targetY, Math.max(3, Math.min(9, Math.sqrt(count))), 0, Math.PI * 2);
+                mCtx.fill();
 
                 // Outer electric blue target ring
                 mCtx.strokeStyle = '#0ea5e9';
