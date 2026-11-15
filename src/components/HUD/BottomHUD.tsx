@@ -8,6 +8,7 @@ interface BottomHUDProps {
   sculptTool: SculptTool;
   trackingSource: TrackingSource;
   onToggleTool: () => void;
+  onSpawn?: (shape: 'cube' | 'sphere' | 'cylinder' | 'gear') => void;
 }
 
 export const BottomHUD: React.FC<BottomHUDProps> = ({
@@ -17,6 +18,7 @@ export const BottomHUD: React.FC<BottomHUDProps> = ({
   sculptTool,
   trackingSource,
   onToggleTool,
+  onSpawn,
 }) => {
   return (
     <footer className="pointer-events-none z-20 absolute bottom-5 inset-x-6 flex items-end justify-between">
@@ -97,8 +99,29 @@ export const BottomHUD: React.FC<BottomHUDProps> = ({
         {activeMode === 'CAD_SLICER' && (
           <span>Tilt wand wrist to rotate cross-section clipping plane • Hold trigger to explode parts</span>
         )}
-        {activeMode === 'VOICE_PHYSICS' && (
-          <span>Say <b className="text-sky-300">"Spawn gear"</b> or <b className="text-sky-300">"Spawn sphere"</b> to create physics bodies</span>
+        {activeMode === 'PHYSICS' && (
+          <div className="flex items-center gap-2">
+            <span className="text-slate-300 font-medium">Spawn:</span>
+            <button
+              onClick={() => onSpawn?.('cube')}
+              className="px-2 py-0.5 rounded text-[11px] font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/40 hover:bg-sky-500/30 transition-all pointer-events-auto"
+            >
+              + Cube
+            </button>
+            <button
+              onClick={() => onSpawn?.('sphere')}
+              className="px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/40 hover:bg-purple-500/30 transition-all pointer-events-auto"
+            >
+              + Sphere
+            </button>
+            <button
+              onClick={() => onSpawn?.('gear')}
+              className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition-all pointer-events-auto"
+            >
+              + Gear
+            </button>
+            <span className="text-slate-400 ml-1">Bat them around with the wand!</span>
+          </div>
         )}
       </div>
 

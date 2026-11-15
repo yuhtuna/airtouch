@@ -1,33 +1,21 @@
 /**
  * AirTouch Firmware — Arduino Nano (ATmega328P)
  * 
- * Strict Hardware Pinout:
- * - MPU-6050 (I2C): SDA -> A4, SCL -> A5 (Hardware I2C)
- * - Coin Vibrator Motor (PWM): Pin 9 (Timer1 PWM)
- * - ILLUM Pushbutton: Pin 2 (Active LOW, INPUT_PULLUP)
- * - Tip Optical Beacon LED: Pin 3 (PWM / NeoPixel Optical Beacon)
- * - VCC: 5V (or 3V3 for GY-521), GND: GND
+ * Hardware Wiring:
+ * - MPU-6050 (I2C 0x68): SDA -> A4, SCL -> A5, VCC -> 5V (or 3V3), GND -> GND
+ * - Pushbutton Switch: Pin 2 (D2) -> GND (Active LOW, internal INPUT_PULLUP)
+ * - Vibration Motor: Pin 3 (D3) (PWM via Timer2, analogWrite 0-255)
  * 
- * Target FQBN: arduino:avr:nano:cpu=atmega328 (or cpu=atmega328old)
+ * Target FQBN: arduino:avr:nano:cpu=atmega328old (or cpu=atmega328)
  */
 
 #include <Wire.h>
-#include <Adafruit_MPU6050.h>
-#include <Adafruit_Sensor.h>
-#include <Adafruit_NeoPixel.h>
 
-// Arduino Nano Pinout Definitions
-#define PIN_BUTTON   2 // Digital Pin 2 (Active LOW, INPUT_PULLUP)
-#define PIN_BEACON   3 // Digital Pin 3 (Optical Beacon LED / NeoPixel)
-#define PIN_HAPTIC   9 // Digital Pin 9 (PWM Haptics)
-// Hardware I2C on ATmega328P: SDA = A4, SCL = A5
+const int MPU_ADDR = 0x68;
+const int buttonPin = 2; // Pushbutton on Pin 2
+const int motorPin  = 3; // Vibration motor on Pin 3 (PWM)
 
-#define NUM_BEACON_PIXELS 1
-
-Adafruit_MPU6050 mpu;
-Adafruit_NeoPixel beacon(NUM_BEACON_PIXELS, PIN_BEACON, NEO_GRB + NEO_KHZ800);
-
-// Complementary filter variables
+// Orientation tracking (Complementary Filter)
 float roll = 0.0f;
 float pitch = 0.0f;
 float yaw = 0.0f;
@@ -39,7 +27,7 @@ float yawOffset = 0.0f;
 unsigned long lastImuTime = 0;
 unsigned long lastTelemetryTime = 0;
 
-// Non-blocking Haptics
+// Non-blocking Haptics Timer
 unsigned long hapticEndTime = 0;
 bool hapticActive = false;
 
@@ -47,16 +35,15 @@ bool hapticActive = false;
 int lastButtonReading = HIGH;
 int buttonState = HIGH;
 unsigned long lastDebounceTime = 0;
-const unsigned long debounceDelay = 25; // 25ms debounce
+const unsigned long debounceDelay = 25;
 
 unsigned long pressStartTime = 0;
 unsigned long lastReleaseTime = 0;
 int clickCount = 0;
-const unsigned long doubleClickGap = 300; // max time between clicks for double click
+const unsigned long doubleClickGap = 300;
+uint8_t pendingClickEvent = 0;
 
-uint8_t pendingClickEvent = 0; // 0 = none, 1 = single click, 2 = double click
-
-// Non-blocking Serial Input Buffer (32 bytes to preserve ATmega328P SRAM)
+// Non-blocking Serial Buffer (32 bytes to preserve ATmega328P SRAM)
 char serialBuffer[32];
 uint8_t serialBufferIdx = 0;
 
@@ -73,28 +60,13 @@ void parseSerialCommand(const char* cmd) {
       unsigned long duration = (secondComma != NULL) ? strtoul(secondComma + 1, NULL, 10) : 0;
 
       pwm = constrain(pwm, 0, 255);
-      analogWrite(PIN_HAPTIC, pwm);
+      analogWrite(motorPin, pwm);
 
       if (pwm > 0 && duration > 0) {
         hapticEndTime = millis() + duration;
         hapticActive = true;
       } else {
-        // pwm == 0 or duration == 0 (continuous vibration until H,0,0)
         hapticActive = false;
-      }
-    }
-  } else if (type == 'C') {
-    // C,<r>,<g>,<b>
-    const char* c1 = strchr(cmd, ',');
-    if (c1 != NULL) {
-      const char* c2 = strchr(c1 + 1, ',');
-      if (c2 != NULL) {
-        const char* c3 = strchr(c2 + 1, ',');
-        int r = atoi(c1 + 1);
-        int g = atoi(c2 + 1);
-        int b = (c3 != NULL) ? atoi(c3 + 1) : 0;
-        beacon.setPixelColor(0, beacon.Color(constrain(r, 0, 255), constrain(g, 0, 255), constrain(b, 0, 255)));
-        beacon.show();
       }
     }
   } else if (type == 'Z') {
@@ -105,7 +77,6 @@ void parseSerialCommand(const char* cmd) {
   }
 }
 
-// 100% Non-blocking Serial Character Accumulator
 void checkSerialInput() {
   while (Serial.available() > 0) {
     char c = Serial.read();
@@ -122,7 +93,7 @@ void checkSerialInput() {
 }
 
 void updateButtonState() {
-  int reading = digitalRead(PIN_BUTTON);
+  int reading = digitalRead(buttonPin);
 
   if (reading != lastButtonReading) {
     lastDebounceTime = millis();
@@ -133,11 +104,9 @@ void updateButtonState() {
       buttonState = reading;
 
       if (buttonState == LOW) {
-        // Button pressed
         pressStartTime = millis();
         clickCount++;
       } else {
-        // Button released
         lastReleaseTime = millis();
       }
     }
@@ -145,117 +114,106 @@ void updateButtonState() {
 
   lastButtonReading = reading;
 
-  // Double click window detection
   if (clickCount > 0 && (millis() - lastReleaseTime) > doubleClickGap && buttonState == HIGH) {
-    if (clickCount == 1) {
-      pendingClickEvent = 1; // Single click
-    } else if (clickCount >= 2) {
-      pendingClickEvent = 2; // Double click
-    }
+    if (clickCount == 1) pendingClickEvent = 1;
+    else if (clickCount >= 2) pendingClickEvent = 2;
     clickCount = 0;
   }
 }
 
 void setup() {
   Serial.begin(115200);
-  delay(300);
-
-  // Configure Hardware Pins
-  pinMode(PIN_BUTTON, INPUT_PULLUP);
-  pinMode(PIN_HAPTIC, OUTPUT);
-  analogWrite(PIN_HAPTIC, 0);
-
-  // Initialize Beacon LED (Default bright electric blue for 60 FPS webcam tracking)
-  beacon.begin();
-  beacon.setBrightness(255);
-  beacon.setPixelColor(0, beacon.Color(0, 140, 255)); // Bright Electric Blue beacon
-  beacon.show();
-
-  // Initialize Hardware I2C (A4 = SDA, A5 = SCL on ATmega328P) at 400kHz fast mode
   Wire.begin();
-  Wire.setClock(400000L);
+  Wire.setClock(400000L); // 400kHz fast I2C
 
-  if (!mpu.begin(0x68, &Wire)) {
-    // Retry once at 0x69
-    if (!mpu.begin(0x69, &Wire)) {
-      // Beacon red error indication
-      beacon.setPixelColor(0, beacon.Color(255, 0, 0));
-      beacon.show();
-      Serial.println(F("ERR: MPU-6050 not detected at 0x68 or 0x69! Check A4(SDA) and A5(SCL) connections."));
-      while (1) {
-        delay(100);
-      }
-    }
+  pinMode(buttonPin, INPUT_PULLUP);
+  pinMode(motorPin, OUTPUT);
+  analogWrite(motorPin, 0);
+
+  // Wake up the MPU-6050
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(0x6B); // PWR_MGMT_1 register
+  Wire.write(0);    // Set to 0 to wake up MPU-6050
+  byte err = Wire.endTransmission(true);
+
+  if (err != 0) {
+    Serial.println(F("ERR: MPU-6050 not responding at 0x68. Check A4(SDA) and A5(SCL)"));
   }
 
-  // Configure MPU6050 ranges
-  mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
-  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
-
   // Startup haptic confirmation chirp
-  analogWrite(PIN_HAPTIC, 180);
-  delay(70);
-  analogWrite(PIN_HAPTIC, 0);
-
-  // Initial beacon back to bright electric blue
-  beacon.setPixelColor(0, beacon.Color(0, 140, 255));
-  beacon.show();
+  analogWrite(motorPin, 120);
+  delay(80);
+  analogWrite(motorPin, 0);
 
   lastImuTime = micros();
   lastTelemetryTime = millis();
 }
 
 void loop() {
-  // 1. Process Incoming Serial Commands (Zero blocking latency)
+  // 1. Process incoming serial commands
   checkSerialInput();
 
-  // 2. Handle Non-blocking Haptics Timer
+  // 2. Non-blocking haptic timer
   if (hapticActive && millis() >= hapticEndTime) {
-    analogWrite(PIN_HAPTIC, 0);
+    analogWrite(motorPin, 0);
     hapticActive = false;
   }
 
-  // 3. Update Button State Machine
+  // 3. Update button state
   updateButtonState();
 
-  // 4. Update IMU & Complementary Filter
+  // 4. Read MPU-6050 sensor data (Burst read 14 bytes)
   unsigned long nowMicros = micros();
   float dt = (nowMicros - lastImuTime) / 1000000.0f;
   if (dt <= 0.0f || dt > 0.1f) dt = 0.01f;
   lastImuTime = nowMicros;
 
-  sensors_event_t a, g, temp;
-  mpu.getEvent(&a, &g, &temp);
+  int16_t rawAcX = 0, rawAcY = 0, rawAcZ = 0;
+  int16_t rawGyX = 0, rawGyY = 0, rawGyZ = 0;
 
-  // Accelerometer pitch and roll (degrees)
-  float accPitch = atan2(-a.acceleration.x, sqrt(a.acceleration.y * a.acceleration.y + a.acceleration.z * a.acceleration.z)) * 57.2957795f;
-  float accRoll  = atan2(a.acceleration.y, a.acceleration.z) * 57.2957795f;
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(0x3B);
+  Wire.endTransmission(false);
 
-  // Gyro rates in deg/s (MPU6050 returns rad/s)
-  float gyroRateX = g.gyro.x * 57.2957795f;
-  float gyroRateY = g.gyro.y * 57.2957795f;
-  float gyroRateZ = g.gyro.z * 57.2957795f;
+  if (Wire.requestFrom(MPU_ADDR, 14, true) == 14) {
+    rawAcX = (Wire.read() << 8) | Wire.read();
+    rawAcY = (Wire.read() << 8) | Wire.read();
+    rawAcZ = (Wire.read() << 8) | Wire.read();
+    Wire.read(); Wire.read(); // Skip Tmp
+    rawGyX = (Wire.read() << 8) | Wire.read();
+    rawGyY = (Wire.read() << 8) | Wire.read();
+    rawGyZ = (Wire.read() << 8) | Wire.read();
+  }
+
+  // Convert raw values (±2g range: 16384 LSB/g, ±250 deg/s range: 131.0 LSB/deg/s)
+  float ax = (rawAcX / 16384.0f) * 9.80665f; // m/s^2
+  float ay = (rawAcY / 16384.0f) * 9.80665f;
+  float az = (rawAcZ / 16384.0f) * 9.80665f;
+
+  float gyroRateX = rawGyX / 131.0f; // deg/s
+  float gyroRateY = rawGyY / 131.0f;
+  float gyroRateZ = rawGyZ / 131.0f;
+
+  float accPitch = atan2(-ax, sqrt(ay * ay + az * az)) * 57.29578f;
+  float accRoll  = atan2(ay, az) * 57.29578f;
 
   // Complementary filter (98% gyro integration, 2% accelerometer correction)
   roll  = 0.98f * (roll + gyroRateX * dt) + 0.02f * accRoll;
   pitch = 0.98f * (pitch + gyroRateY * dt) + 0.02f * accPitch;
-  yaw   = yaw + gyroRateZ * dt; // Yaw integrated from Z gyro
+  yaw   = yaw + gyroRateZ * dt;
 
   // 5. Emit Telemetry at 100 Hz (every 10 ms)
   unsigned long nowMillis = millis();
   if (nowMillis - lastTelemetryTime >= 10) {
     lastTelemetryTime = nowMillis;
 
-    // Output calibrated angles
     float outRoll  = roll - rollOffset;
     float outPitch = pitch - pitchOffset;
     float outYaw   = yaw - yawOffset;
 
-    // Active LOW button: 0 = pressed -> 1 in telemetry, 1 = released -> 0
     uint8_t btnOutput = (buttonState == LOW) ? 1 : 0;
     uint8_t eventToSend = pendingClickEvent;
-    pendingClickEvent = 0; // Clear edge trigger
+    pendingClickEvent = 0;
 
     // Compact CSV protocol: T,<roll>,<pitch>,<yaw>,<ax>,<ay>,<az>,<btn>,<clickEvent>
     Serial.print(F("T,"));
@@ -265,11 +223,11 @@ void loop() {
     Serial.print(F(","));
     Serial.print(outYaw, 2);
     Serial.print(F(","));
-    Serial.print(a.acceleration.x, 2);
+    Serial.print(ax, 2);
     Serial.print(F(","));
-    Serial.print(a.acceleration.y, 2);
+    Serial.print(ay, 2);
     Serial.print(F(","));
-    Serial.print(a.acceleration.z, 2);
+    Serial.print(az, 2);
     Serial.print(F(","));
     Serial.print(btnOutput);
     Serial.print(F(","));

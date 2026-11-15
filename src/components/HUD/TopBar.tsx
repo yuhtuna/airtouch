@@ -1,13 +1,11 @@
 import React from 'react';
 import { DemoMode } from '../../types/telemetry';
-import { Sparkles, Activity, Layers, Box, Mic, Video, RotateCcw, Plug, Unplug } from 'lucide-react';
+import { Sparkles, Activity, Layers, Box, Video, RotateCcw, Plug, Unplug } from 'lucide-react';
 
 interface TopBarProps {
   connected: boolean;
   activeMode: DemoMode;
   onModeSelect: (mode: DemoMode) => void;
-  voiceActive: boolean;
-  onToggleVoice: () => void;
   trackerActive: boolean;
   onToggleTracker: () => void;
   onRecenter: () => void;
@@ -19,15 +17,13 @@ const MODES: { id: DemoMode; label: string; icon: any }[] = [
   { id: 'SCULPT', label: '3D Sculpt', icon: Sparkles },
   { id: 'TEXTURE_LAB', label: 'Haptic Lab', icon: Activity },
   { id: 'CAD_SLICER', label: 'CAD Slicer', icon: Layers },
-  { id: 'VOICE_PHYSICS', label: 'Physics', icon: Box },
+  { id: 'PHYSICS', label: 'Physics Arena', icon: Box },
 ];
 
 export const TopBar: React.FC<TopBarProps> = ({
   connected,
   activeMode,
   onModeSelect,
-  voiceActive,
-  onToggleVoice,
   trackerActive,
   onToggleTracker,
   onRecenter,
@@ -81,32 +77,18 @@ export const TopBar: React.FC<TopBarProps> = ({
 
       {/* Quick Action Controls */}
       <div className="flex items-center gap-3">
-        {/* Voice Toggle */}
-        <button
-          onClick={onToggleVoice}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-            voiceActive
-              ? 'bg-indigo-600/30 text-indigo-300 border-indigo-500 shadow-sm'
-              : 'bg-slate-800/50 text-slate-300 border-slate-700 hover:bg-slate-800'
-          }`}
-          title="Toggle Web Speech recognition"
-        >
-          <Mic className={`w-3.5 h-3.5 ${voiceActive ? 'text-indigo-400 animate-pulse' : ''}`} />
-          <span>{voiceActive ? 'Voice: On' : 'Voice'}</span>
-        </button>
-
         {/* Optical Webcam Tracker Toggle */}
         <button
           onClick={onToggleTracker}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
             trackerActive
-              ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500 shadow-sm'
+              ? 'bg-sky-600/30 text-sky-300 border-sky-500 shadow-sm'
               : 'bg-slate-800/50 text-slate-300 border-slate-700 hover:bg-slate-800'
           }`}
-          title="Toggle 60 FPS Optical Tip Tracking"
+          title="Toggle 60 FPS Optical Tip Tracking (Blue LED)"
         >
-          <Video className={`w-3.5 h-3.5 ${trackerActive ? 'text-emerald-400' : ''}`} />
-          <span>{trackerActive ? '60 FPS Active' : 'Tracker'}</span>
+          <Video className={`w-3.5 h-3.5 ${trackerActive ? 'text-sky-400' : ''}`} />
+          <span>{trackerActive ? 'Blue Tracker: ON' : 'Blue Tracker'}</span>
         </button>
 
         {/* Recenter Button */}

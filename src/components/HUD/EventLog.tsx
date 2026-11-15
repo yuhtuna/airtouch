@@ -33,8 +33,8 @@ export const EventLog: React.FC<EventLogProps> = ({ logs }) => {
               className={`leading-relaxed ${
                 log.includes('Gesture')
                   ? 'text-amber-300 font-semibold'
-                  : log.includes('Voice')
-                  ? 'text-indigo-300'
+                  : log.includes('Optical') || log.includes('Tracker')
+                  ? 'text-sky-300'
                   : log.includes('Connected')
                   ? 'text-emerald-300'
                   : ''

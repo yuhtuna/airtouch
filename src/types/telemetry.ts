@@ -9,7 +9,7 @@ export interface WandTelemetry {
   clickEvent: number; // 0 = none, 1 = single click, 2 = double click
 }
 
-export type DemoMode = 'SCULPT' | 'TEXTURE_LAB' | 'CAD_SLICER' | 'VOICE_PHYSICS';
+export type DemoMode = 'SCULPT' | 'TEXTURE_LAB' | 'CAD_SLICER' | 'PHYSICS';
 
 export type SculptTool = 'DRAW' | 'ERASE';
 

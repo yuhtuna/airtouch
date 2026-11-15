@@ -7,7 +7,6 @@ import { STLExporter } from 'three/examples/jsm/exporters/STLExporter.js';
 import { WandTelemetry, DemoMode, Stroke, StrokePoint, SculptTool, TrackingSource } from './types/telemetry';
 import { useSerial } from './hooks/useSerial';
 import { useWebcamTracker } from './hooks/useWebcamTracker';
-import { useVoiceCommands } from './hooks/useVoiceCommands';
 import { Wand3D } from './components/Wand3D';
 import { TopBar } from './components/HUD/TopBar';
 import { BottomHUD } from './components/HUD/BottomHUD';
@@ -249,17 +248,6 @@ export default function App() {
     addLog('Exported 3D sculpt to binary STL file.');
   }, [strokes, addLog]);
 
-  // Web Speech Hook
-  const { listening: voiceActive, toggleVoice } = useVoiceCommands({
-    onModeChange: setActiveMode,
-    onToolChange: setSculptTool,
-    onRecenter: handleRecenter,
-    onClear: handleClear,
-    onSpawn: handleSpawn,
-    onExportSTL: handleExportSTL,
-    onLog: addLog,
-  });
-
   // Global Keyboard Shortcuts (Space: Recenter, E: Toggle Tool)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -365,8 +353,6 @@ export default function App() {
         connected={connected}
         activeMode={activeMode}
         onModeSelect={setActiveMode}
-        voiceActive={voiceActive}
-        onToggleVoice={toggleVoice}
         trackerActive={trackerActive}
         onToggleTracker={trackerActive ? stopTracker : startTracker}
         onRecenter={handleRecenter}
@@ -438,7 +424,7 @@ export default function App() {
               />
             )}
 
-            {activeMode === 'VOICE_PHYSICS' && (
+            {activeMode === 'PHYSICS' && (
               <PhysicsSandboxMode
                 wandTipPosRef={wandTipPosRef}
                 objects={physicsObjects}
@@ -489,6 +475,7 @@ export default function App() {
           sculptTool={sculptTool}
           trackingSource={trackingSource}
           onToggleTool={() => setSculptTool((prev) => (prev === 'DRAW' ? 'ERASE' : 'DRAW'))}
+          onSpawn={handleSpawn}
         />
       </div>
     </div>
