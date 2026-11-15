@@ -82,18 +82,36 @@ async function main() {
   let success = false;
   for (const port of candidatePorts) {
     console.log(`\n🚀 Attempting upload to ${port}...`);
-    const res = spawnSync('arduino-cli', ['upload', '-p', port, '--fqbn', FQBN, SKETCH], {
-      env,
-      stdio: 'inherit',
-    });
 
-    if (res.status === 0) {
-      console.log(`\n🎉 SUCCESS! Firmware successfully flashed to Arduino Nano on ${port}!`);
-      success = true;
-      break;
-    } else {
-      console.warn(`⚠️ Upload to ${port} failed. Trying next candidate...`);
+    // Retry loop in case the port is briefly locked by Web Serial browser tab
+    const maxRetries = 15;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const res = spawnSync('arduino-cli', ['upload', '-p', port, '--fqbn', FQBN, SKETCH], {
+        env,
+        stdio: 'pipe',
+        encoding: 'utf-8',
+      });
+
+      if (res.status === 0) {
+        if (res.stdout) console.log(res.stdout);
+        console.log(`\n🎉 SUCCESS! Firmware successfully flashed to Arduino Nano on ${port}!`);
+        success = true;
+        break;
+      }
+
+      const isAccessDenied = (res.stderr && res.stderr.includes('Access is denied')) || (res.stdout && res.stdout.includes('Access is denied'));
+      if (isAccessDenied && attempt < maxRetries) {
+        console.log(`⏳ [${attempt}/${maxRetries}] Port ${port} is currently busy/locked (open in browser). Waiting for disconnect...`);
+        // Sleep 1 second
+        spawnSync('powershell', ['-Command', 'Start-Sleep -Seconds 1']);
+      } else {
+        if (res.stderr) console.error(res.stderr);
+        break;
+      }
     }
+
+    if (success) break;
+    console.warn(`⚠️ Upload to ${port} failed. Trying next candidate...`);
   }
 
   if (!success) {
