@@ -72,6 +72,6 @@ Then open `http://localhost:3000` in Google Chrome or Microsoft Edge (which supp
 ## 🎯 Four Core Interactive Demo Modes
 
 1. **3D Spatial Sculpt & Paint**: Extrude smooth 3D tube strokes in mid-air with continuous haptic feedback; twist wand wrist to scale brush radius; binary STL export.
-2. **Haptic Material & Texture Lab**: 4 material spheres (*Ice*, *Coarse Sandpaper*, *Corrugated Metal*, *Soft Rubber*) with velocity-dependent dynamic PWM waveforms and LED color synchronization.
+2. **Haptic Material & Texture Lab**: 4 material spheres (*Ice*, *Coarse Sandpaper*, *Corrugated Metal*, *Soft Rubber*) with velocity-dependent dynamic PWM waveforms and LED synchronization.
 3. **CAD Cross-Section Slicer & Exploder**: Multi-part planetary gearset with wrist-tilt clipping plane and trigger-held explosion.
-4. **Voice-to-3D Physics Sandbox**: Speak commands to spawn dynamic 3D primitives with kinematic wand collisions and impulse transfer.
+4. **Interactive 3D Physics Arena**: Spawn dynamic 3D primitives (cubes, spheres, cylinders, gears) with kinematic wand bat collisions, physical gravity, and impulse transfer.

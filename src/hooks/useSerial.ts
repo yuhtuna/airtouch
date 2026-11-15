@@ -184,6 +184,7 @@ export function useSerial({ onTelemetry, onLog }: UseSerialProps) {
         setStatus('DISCONNECTED');
       } else {
         onLog(`Serial connection error: ${err.message}`);
+        isTransitioningRef.current = false;
         await disconnect();
       }
     } finally {

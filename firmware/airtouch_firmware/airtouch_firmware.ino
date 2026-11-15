@@ -74,6 +74,10 @@ void parseSerialCommand(const char* cmd) {
     rollOffset = roll;
     pitchOffset = pitch;
     yawOffset = yaw;
+  } else if (type == 'C') {
+    // C,<r>,<g>,<b> — Front Optical LED Color Command
+    // Front optical beacon is physical 5mm Blue LED for webcam tracking;
+    // Command is accepted and acknowledged safely without serial buffer error.
   }
 }
 

@@ -2,28 +2,27 @@
 
 ## 1. Project Overview
 AirTouch is a 3D spatial haptic wand and browser-based spatial studio built with:
-- **Hardware**: Arduino Nano (ATmega328P), GY-521 MPU-6050 (6-axis IMU), 10mm Coin Vibrator Motor, ILLUM Pushbutton Switch, and a diffused Front Tracking LED (NeoPixel or standard LED).
+- **Hardware**: Arduino Nano (ATmega328P), GY-521 MPU-6050 (6-axis IMU), 10mm Coin Vibrator Motor, ILLUM Pushbutton Switch, and a diffused Front Tracking LED (5mm High-Intensity Blue LED).
 - **Frontend**: Vite + React + TypeScript + Three.js (`@react-three/fiber`, `@react-three/drei`) + Tailwind CSS.
-- **Communication**: Bidirectional Web Serial API (`navigator.serial` at `115200` baud) over USB, paired with 60 FPS browser webcam optical tracking (`getUserMedia` HTML5 Canvas blob detection) and Web Speech API for voice commands.
+- **Communication**: Bidirectional Web Serial API (`navigator.serial` at `115200` baud) over USB, paired with 60 FPS browser webcam optical tracking (`getUserMedia` HTML5 Canvas subpixel blue flux density detection).
 
 ---
 
 ## 2. Strict Hardware Pinout (`Arduino Nano ATmega328P`)
-NEVER change these pin definitions in firmware:
+Hardware wiring configuration in firmware:
 - **MPU-6050 IMU (I2C)**:
   - `VCC` -> `5V` (or `3V3` on GY-521)
   - `GND` -> `GND`
   - `SDA` -> `A4` (Hardware I2C SDA)
   - `SCL` -> `A5` (Hardware I2C SCL)
 - **Coin Vibrator Motor (PWM Haptics)**:
-  - `Pos (+)` -> `Pin 9` — Driven via `analogWrite(9, pwmValue)` (0–255 PWM via Timer1).
+  - `Pos (+)` -> `Pin 3` — Driven via `analogWrite(3, pwmValue)` (0–255 PWM via Timer2).
   - `Neg (-)` -> `GND`
 - **ILLUM Pushbutton Switch (Primary Trigger)**:
   - `Leg 1` -> `Pin 2` — Configured with `pinMode(2, INPUT_PULLUP)`. Active `LOW` (`0` = pressed, `1` = released).
   - `Leg 2` -> `GND`
 - **Tip Optical Beacon LED**:
-  - `Data / Anode (+)` -> `Pin 3` — Always illuminated brightly during operation (NeoPixel data or PWM high) so the laptop webcam can track the front diffuser orb.
-  - `GND / Cathode (-)` -> `GND`
+  - `Anode (+)` / `Cathode (-)` -> High-intensity 5mm Blue LED wired at wand tip for 60 FPS optical blob centroid & depth tracking.
 
 ---
 
@@ -67,14 +66,13 @@ Single-line ASCII commands terminated by `\n`:
 2. **3D Orientation (`Roll, Pitch, Yaw`) from MPU-6050**:
    - Directly rotates the 3D wand cursor/tool mesh in the Three.js scene.
 
-### B. Multi-Modal Controls (Using 1 Physical Button + IMU + Voice)
+### B. Multi-Modal Controls (Using 1 Physical Button + IMU)
 - **Hover (Button Released `btn=0`)**: Move 3D cursor freely without modifying the scene.
 - **Primary Action (Button Held `btn=1`)**: Draw voxel/tube stroke, carve clay, grab/drag 3D part, or rub haptic surface.
 - **Brush Size / Parameter Dial (Wrist Roll Twist)**: Twisting the wand along its roll axis dynamically scales brush radius (`1x` to `5x`) and sends short haptic clicks (`H,140,15\n`) every `15°` of rotation like a physical detent dial.
 - **Undo Gesture (Sharp Left Flick)**: If `ax < -18.0 m/s²` while button is released, trigger `undo()` and fire a double haptic pulse.
-- **Recenter / Calibration (Double-Click `clickEvent=2` or `Spacebar`)**: Sets current wand position and IMU angles as `(0, 0, 0)` origin.
-- **Voice Commands (Browser `webkitSpeechRecognition` or Onboard Mic)**:
-  - Phrases: *"Sculpt mode"*, *"Erase mode"*, *"Texture mode"*, *"Slicer mode"*, *"Clear canvas"*, *"Spawn gear"*, *"Export STL"*.
+- **Recenter / Calibration (Long-Press `>1s` or `Spacebar`)**: Sets current wand position and IMU angles as `(0, 0, 0)` origin.
+- **Mode Switching (Double-Click or `Tab` / `1–4`)**: Cycles through the 4 interactive demo modes.
 
 ---
 
@@ -83,4 +81,4 @@ Build a clean top/bottom glassmorphic HUD allowing instant switching between:
 1. **3D Spatial Sculpt & Paint**: Extrude smooth 3D tube/metaball strokes in mid-air; continuous subtle haptic buzz (`H,85,50\n`) while extruding.
 2. **Haptic Material & Texture Lab**: Present 4 interactive spheres (*Ice*, *Coarse Sandpaper*, *Corrugated Metal*, *Soft Rubber*). Raycast wand tip collisions against the spheres and stream real-time PWM waveforms (`H,<pwm>,<ms>\n`) based on cursor velocity and surface roughness.
 3. **CAD Cross-Section Slicer & Exploder**: Load a multi-part 3D assembly (or procedural mechanical gearset). Holding the button grabs/explodes parts; switching to Slicer attaches a `THREE.Plane` clipping plane to the wand's IMU `pitch` and `roll` so tilting your wrist slices the 3D object in real time.
-4. **Voice-to-3D Physics Sandbox**: Speak object names to spawn physics-enabled 3D primitives you can bat around with the wand, triggering heavy `H,255,60\n` haptic impacts on collision.
+4. **Interactive 3D Physics Sandbox**: Drop dynamic physics-enabled 3D primitives (cube, sphere, cylinder, gear) that you can bat around with the wand in mid-air, triggering crisp `H,220,60\n` haptic impacts on collision.

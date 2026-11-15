@@ -116,6 +116,10 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
           let sumWeightedY = 0;
           let totalDensity = 0;
           let rawPixelCount = 0;
+          let smoothX = 0;
+          let smoothY = 0;
+          let smoothZ = 0;
+          let smoothRoll = 0;
 
           // Process full pixel grid (stride 4 bytes) for subpixel accuracy without aliasing
           for (let i = 0; i < data.length; i += 4) {
@@ -176,7 +180,7 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
             const rawZ = Math.max(-3.5, Math.min(3.5, deltaSqrt * 2.2));
 
             // Smooth using 1-Euro Filter (with heavy damping on stationary Z)
-            const [smoothX, smoothY, smoothZ] = filterRef.current.filter(
+            [smoothX, smoothY, smoothZ] = filterRef.current.filter(
               rawX,
               rawY,
               rawZ,
@@ -224,7 +228,7 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
               rawOpticalRoll = Math.max(-55, Math.min(55, rawOpticalRoll));
               rawOpticalPitch = (mu02 > mu20 ? 1 : -1) * elongation * 25.0;
             }
-            const smoothRoll = tiltFilterRef.current.filter(rawOpticalRoll, performance.now());
+            smoothRoll = tiltFilterRef.current.filter(rawOpticalRoll, performance.now());
 
             if (!isNaN(smoothX) && !isNaN(smoothY) && !isNaN(smoothZ)) {
               onPositionUpdate([smoothX, smoothY, smoothZ], [rawOpticalPitch, 0, smoothRoll]);

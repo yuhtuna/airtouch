@@ -43,6 +43,7 @@ export default function App() {
   const depthNudgeRef = useRef(0);
   const recalibrateDepthRef = useRef<() => void>(() => {});
   const depthFusionRef = useRef(new DepthSensorFusion());
+  const opticalOffsetRef = useRef<[number, number, number]>([0, 0, 0]);
 
   // Telemetry HUD state
   const [telemetry, setTelemetry] = useState<WandTelemetry>({
@@ -183,7 +184,16 @@ export default function App() {
     depthNudgeRef.current = 0;
     recalibrateDepthRef.current();
     depthFusionRef.current.reset(0);
+    // Lock optical offset to current camera position so wand centers at (0, 0, 0)
+    if (lastOpticalPosRef.current) {
+      opticalOffsetRef.current = [
+        lastOpticalPosRef.current[0] + opticalOffsetRef.current[0],
+        lastOpticalPosRef.current[1] + opticalOffsetRef.current[1],
+        0,
+      ];
+    }
     wandPosRef.current = [0, 0, 0];
+    wandTipPosRef.current.set(0, 0, 0);
     sendCommand('Z\n', true);
     triggerHaptic(160, 40);
     audioHaptics.playCollisionThud(0.8);
@@ -256,16 +266,14 @@ export default function App() {
     recalibrateNeutralDepth,
   } = useWebcamTracker({
     onPositionUpdate: (pos, opticalTilt) => {
-      // Sensor Fusion: Fuse optical depth anchor with IMU dynamic thrust
-      const fusedZ = depthFusionRef.current.updateOptical(pos[2]);
+      // 1. Position update with Recenter offset and depth nudge
+      const posX = pos[0] - opticalOffsetRef.current[0];
+      const posY = pos[1] - opticalOffsetRef.current[1];
+      const posZ = pos[2] + depthNudgeRef.current;
 
-      const adjustedPos: [number, number, number] = [
-        pos[0],
-        pos[1],
-        fusedZ + depthNudgeRef.current,
-      ];
+      const adjustedPos: [number, number, number] = [posX, posY, posZ];
       lastOpticalPosRef.current = adjustedPos;
-      // Optical + IMU Sensor Fusion drives 3D position in real time
+      // Optical tracker directly drives 3D position in real time
       wandPosRef.current = adjustedPos;
 
       // Optical blob tilt fallback when hardware IMU is not streaming
@@ -273,21 +281,24 @@ export default function App() {
         wandRotRef.current = opticalTilt;
       }
 
-      const targetEuler = new THREE.Euler(
-        (wandRotRef.current[0] * Math.PI) / 180,
-        (wandRotRef.current[1] * Math.PI) / 180,
-        (wandRotRef.current[2] * Math.PI) / 180,
-        'YXZ'
-      );
-      const tipOffset = new THREE.Vector3(0, 0, 0.68).applyEuler(targetEuler);
-      wandTipPosRef.current.set(
-        adjustedPos[0] + tipOffset.x,
-        adjustedPos[1] + tipOffset.y,
-        adjustedPos[2] + tipOffset.z
-      );
+      // The tracked optical beacon is the wand tip/beacon itself!
+      // This eliminates all rotational Z-teleporting when tilting the wand.
+      wandTipPosRef.current.set(adjustedPos[0], adjustedPos[1], adjustedPos[2]);
     },
     onLog: addLog,
   });
+
+  // Automatically unlatch trigger if hardware disconnects while button held
+  useEffect(() => {
+    if (!connected) {
+      setTelemetry((prev) => ({
+        ...prev,
+        btn: 0,
+        clickEvent: 0,
+      }));
+      setManualTriggerHeld(false);
+    }
+  }, [connected]);
 
   // Keep optical tracking refs synced for zero-latency frame access
   useEffect(() => {
@@ -304,8 +315,11 @@ export default function App() {
       { id: '2', shape: 'sphere', position: [0.8, 2.5, -1], color: '#a855f7' },
       { id: '3', shape: 'gear', position: [0.0, 3.0, -1.2], color: '#f59e0b' },
     ]);
+    opticalOffsetRef.current = [0, 0, 0];
+    depthNudgeRef.current = 0;
     wandPosRef.current = [0, 0, 0];
     wandRotRef.current = [0, 0, 0];
+    wandTipPosRef.current.set(0, 0, 0);
     depthFusionRef.current.reset(0);
     sendCommand('Z\n', true);
     triggerHaptic(200, 100);
@@ -313,11 +327,12 @@ export default function App() {
     addLog('Full Reset: 3D world strokes/physics cleared & Arduino Nano MCU recalibrated.');
   }, [sendCommand, triggerHaptic, addLog]);
 
-  // Exit to Menu
+  // Exit to Menu (Cleanly shuts down webcam stream)
   const handleExitToMenu = useCallback(() => {
     setIsStarted(false);
-    addLog('Returned to Start Menu.');
-  }, [addLog]);
+    stopTracker();
+    addLog('Returned to Start Menu. Camera tracker paused.');
+  }, [stopTracker, addLog]);
 
   // Start Workspace Handler
   const handleStartWorkspace = useCallback(() => {
@@ -358,7 +373,8 @@ export default function App() {
     });
 
     const result = exporter.parse(group, { binary: true });
-    const blob = new Blob([result], { type: 'application/octet-stream' });
+    const buffer = result instanceof DataView ? (result.buffer as ArrayBuffer) : result;
+    const blob = new Blob([buffer], { type: 'application/octet-stream' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = `AirTouch_Sculpt_${Date.now()}.stl`;

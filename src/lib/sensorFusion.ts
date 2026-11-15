@@ -94,8 +94,8 @@ export class DepthSensorFusion {
 
     if (isNaN(opticalZ)) return this.fusedZ;
 
-    // Optical depth directly anchors position without sluggish lag, plus dynamic inertial thrust boost
-    this.fusedZ = opticalZ + this.velocityZ * 0.12;
+    // Optical depth directly anchors position with rock-solid stability
+    this.fusedZ = opticalZ;
     return this.fusedZ;
   }
 

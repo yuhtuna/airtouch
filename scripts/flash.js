@@ -14,7 +14,8 @@ const PRIORITY_PORTS = ['COM6', 'COM7'];
 
 // Optional manual port from CLI arg: node scripts/flash.js COM6
 const manualPort = process.argv.slice(2).find((arg) => !arg.startsWith('--'));
-const shouldCompile = process.argv.includes('--compile');
+const shouldCompile = process.argv.includes('--compile') || process.argv.includes('--compile-only');
+const compileOnly = process.argv.includes('--compile-only');
 
 function run(cmd, inherit = true) {
   try {
@@ -56,6 +57,9 @@ async function main() {
       process.exit(1);
     }
     console.log('✓ Firmware compiled successfully.');
+    if (compileOnly) {
+      process.exit(0);
+    }
   }
 
   const detectedPorts = getAvailablePorts();
