@@ -22,11 +22,14 @@ export const TextureLabMode: React.FC<TextureLabModeProps> = ({
   const corrugatedDistanceRef = useRef(0);
 
   const spherePositions: [number, number, number][] = [
-    [-2.4, 0.2, 0],
-    [-0.8, 0.2, 0],
-    [0.8, 0.2, 0],
-    [2.4, 0.2, 0],
+    [-3.75, 0.35, -0.35],
+    [-1.25, 0.35, 0.15],
+    [1.25, 0.35, 0.15],
+    [3.75, 0.35, -0.35],
   ];
+
+  const sphereRadius = 1.20;
+  const detectionRadius = 1.28;
 
   useFrame((_, delta) => {
     const tipPos = wandTipPosRef.current || new THREE.Vector3();
@@ -42,9 +45,8 @@ export const TextureLabMode: React.FC<TextureLabModeProps> = ({
     spherePositions.forEach((pos, idx) => {
       const sphereCenter = new THREE.Vector3(...pos);
       const dist = tipPos.distanceTo(sphereCenter);
-      const radius = 0.72;
 
-      if (dist < radius) {
+      if (dist < detectionRadius) {
         hitAny = true;
         const mat = MATERIAL_PRESETS[idx];
 
@@ -98,45 +100,68 @@ export const TextureLabMode: React.FC<TextureLabModeProps> = ({
 
         return (
           <group key={mat.id} position={pos}>
-            {/* 3D Label */}
+            {/* 3D Title Label */}
             <Text
-              position={[0, 1.1, 0]}
-              fontSize={0.22}
-              color={isHovered ? '#38bdf8' : '#94a3b8'}
+              position={[0, 1.70, 0]}
+              fontSize={0.28}
+              color={isHovered ? '#38bdf8' : '#e2e8f0'}
               anchorX="center"
               anchorY="middle"
             >
               {mat.name}
             </Text>
 
-            {/* Sub-label */}
+            {/* Sub-label description */}
             <Text
-              position={[0, 0.88, 0]}
-              fontSize={0.12}
-              color="#64748b"
+              position={[0, 1.42, 0]}
+              fontSize={0.15}
+              color={isHovered ? '#93c5fd' : '#94a3b8'}
               anchorX="center"
               anchorY="middle"
             >
               {mat.description}
             </Text>
 
-            {/* Material Sphere */}
-            <mesh scale={isHovered ? 1.06 : 1.0}>
-              <sphereGeometry args={[0.65, 36, 36]} />
+            {/* Material Sphere (Enlarged to 1.20 radius / 2.4 diameter) */}
+            <mesh
+              scale={isHovered ? 1.05 : 1.0}
+              castShadow
+              receiveShadow
+              onPointerOver={() => {
+                setActiveMaterialId(mat.id);
+                const [r, g, b] = mat.ledColor;
+                sendSerial(`C,${r},${g},${b}\n`);
+                audioHaptics.playTextureWaveform(mat.id as any);
+              }}
+            >
+              <sphereGeometry args={[sphereRadius, 48, 48]} />
               <meshStandardMaterial
                 color={mat.color}
                 roughness={mat.roughness}
                 metalness={mat.metalness}
-                emissive={isHovered ? mat.color : '#000000'}
-                emissiveIntensity={isHovered ? 0.4 : 0}
+                emissive={mat.color}
+                emissiveIntensity={isHovered ? 0.45 : 0.04}
               />
             </mesh>
 
+            {/* Local Glow Light when Hovered/Touched */}
+            {isHovered && (
+              <pointLight color={mat.color} intensity={1.8} distance={3.5} />
+            )}
+
             {/* Pedestal Base */}
-            <mesh position={[0, -0.9, 0]}>
-              <cylinderGeometry args={[0.3, 0.45, 0.4, 24]} />
+            <mesh position={[0, -1.35, 0]}>
+              <cylinderGeometry args={[0.55, 0.85, 0.5, 32]} />
               <meshStandardMaterial color="#1e293b" roughness={0.7} metalness={0.2} />
             </mesh>
+
+            {/* Active Floor Ring Halo */}
+            {isHovered && (
+              <mesh position={[0, -1.58, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+                <ringGeometry args={[0.85, 1.25, 32]} />
+                <meshBasicMaterial color={mat.color} transparent opacity={0.6} side={THREE.DoubleSide} />
+              </mesh>
+            )}
           </group>
         );
       })}
