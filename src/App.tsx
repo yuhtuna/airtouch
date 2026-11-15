@@ -11,6 +11,8 @@ import { Wand3D } from './components/Wand3D';
 import { TopBar } from './components/HUD/TopBar';
 import { BottomHUD } from './components/HUD/BottomHUD';
 import { EventLog } from './components/HUD/EventLog';
+import { StartScreen } from './components/StartScreen';
+import { RotatingBackground } from './components/RotatingBackground';
 
 import { SculptMode } from './modes/SculptMode';
 import { TextureLabMode } from './modes/TextureLabMode';
@@ -20,6 +22,7 @@ import { HAPTIC_PATTERNS } from './lib/hapticPatterns';
 import { audioHaptics } from './lib/audioHaptics';
 
 export default function App() {
+  const [isStarted, setIsStarted] = useState(false);
   const [activeMode, setActiveMode] = useState<DemoMode>('SCULPT');
   const [sculptTool, setSculptTool] = useState<SculptTool>('DRAW');
   const [manualTriggerHeld, setManualTriggerHeld] = useState(false);
@@ -262,6 +265,43 @@ export default function App() {
     opticalConfidenceRef.current = trackingConfidence;
   }, [trackingConfidence]);
 
+  // Full Reset: World (strokes, physics) AND MCU (calibration, haptics)
+  const handleResetAll = useCallback(() => {
+    setStrokes([]);
+    setPhysicsObjects([
+      { id: '1', shape: 'cube', position: [-0.8, 2.0, -1], color: '#38bdf8' },
+      { id: '2', shape: 'sphere', position: [0.8, 2.5, -1], color: '#a855f7' },
+      { id: '3', shape: 'gear', position: [0.0, 3.0, -1.2], color: '#f59e0b' },
+    ]);
+    wandPosRef.current = [0, 0, 0];
+    wandRotRef.current = [0, 0, 0];
+    sendCommand('Z\n', true);
+    triggerHaptic(200, 100);
+    audioHaptics.playCollisionThud(1.0);
+    addLog('Full Reset: 3D world strokes/physics cleared & Arduino Nano MCU recalibrated.');
+  }, [sendCommand, triggerHaptic, addLog]);
+
+  // Exit to Menu
+  const handleExitToMenu = useCallback(() => {
+    setIsStarted(false);
+    addLog('Returned to Start Menu.');
+  }, [addLog]);
+
+  // Start Workspace Handler
+  const handleStartWorkspace = useCallback(() => {
+    setIsStarted(true);
+    triggerHaptic(180, 70);
+    audioHaptics.playCollisionThud(0.8);
+    addLog('Workspace started. Dual tracking active.');
+
+    if (!connected) {
+      connect();
+    }
+    if (!trackerActive) {
+      startTracker();
+    }
+  }, [connected, connect, trackerActive, startTracker, triggerHaptic, addLog]);
+
   // Export STL
   const handleExportSTL = useCallback(() => {
     if (strokes.length === 0) {
@@ -325,9 +365,9 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleRecenter, cycleMode, handleClear, addLog]);
 
-  // Active Disconnected Simulation Loop (Completely disabled when hardware connected OR when testing optical tracker)
+  // Active Disconnected Simulation Loop (Completely disabled when in menu OR when hardware connected OR when testing optical tracker)
   useEffect(() => {
-    if (connected || trackerActive) return;
+    if (!isStarted || connected || trackerActive) return;
 
     let animId: number;
     let time = 0;
@@ -375,7 +415,7 @@ export default function App() {
 
     animId = requestAnimationFrame(simulate);
     return () => cancelAnimationFrame(animId);
-  }, [connected, trackerActive]);
+  }, [isStarted, connected, trackerActive]);
 
   // Stroke management
   const handleAddCompletedStroke = useCallback((newStroke: Stroke) => {
@@ -411,17 +451,23 @@ export default function App() {
       }}
       onMouseUp={() => setManualTriggerHeld(false)}
     >
-      {/* Top Glassmorphic Navigation Bar */}
-      <TopBar
-        connected={connected}
-        activeMode={activeMode}
-        onModeSelect={setActiveMode}
-        trackerActive={trackerActive}
-        onToggleTracker={trackerActive ? stopTracker : startTracker}
-        onRecenter={handleRecenter}
-        onConnect={connect}
-        onDisconnect={disconnect}
-      />
+      {/* Top Glassmorphic Navigation Bar (Shown when in workspace) */}
+      {isStarted && (
+        <TopBar
+          connected={connected}
+          activeMode={activeMode}
+          onModeSelect={setActiveMode}
+          trackerActive={trackerActive}
+          onToggleTracker={trackerActive ? stopTracker : startTracker}
+          onRecenter={handleRecenter}
+          onResetAll={handleResetAll}
+          onExitToMenu={handleExitToMenu}
+          sculptTool={sculptTool}
+          onToggleTool={() => setSculptTool((prev) => (prev === 'DRAW' ? 'ERASE' : 'DRAW'))}
+          onSpawnPhysics={handleSpawn}
+          onConnect={connect}
+        />
+      )}
 
       {/* Main 3D Canvas */}
       <div className="relative flex-1 w-full h-full">
@@ -448,51 +494,58 @@ export default function App() {
           <gridHelper args={[24, 24, '#1e293b', '#0f172a']} position={[0, -2.4, 0]} />
 
           <React.Suspense fallback={null}>
-            {/* 3D Wand Mesh */}
-            <Wand3D
-              positionRef={wandPosRef}
-              rotationRef={wandRotRef}
-              isPressed={isTriggerHeld}
-              brushRadius={brushRadius}
-            />
+            {/* When in menu, render rotating futuristic gyro background */}
+            {!isStarted ? (
+              <RotatingBackground />
+            ) : (
+              <>
+                {/* 3D Wand Mesh */}
+                <Wand3D
+                  positionRef={wandPosRef}
+                  rotationRef={wandRotRef}
+                  isPressed={isTriggerHeld}
+                  brushRadius={brushRadius}
+                />
 
-            {/* Active Demo Modes */}
-            {activeMode === 'SCULPT' && (
-              <SculptMode
-                wandTipPosRef={wandTipPosRef}
-                isTriggerHeld={isTriggerHeld}
-                brushRadius={brushRadius}
-                tool={sculptTool}
-                strokes={strokes}
-                onAddCompletedStroke={handleAddCompletedStroke}
-                onEraseAtTip={handleEraseAtTip}
-                triggerHaptic={triggerHaptic}
-              />
-            )}
+                {/* Active Demo Modes */}
+                {activeMode === 'SCULPT' && (
+                  <SculptMode
+                    wandTipPosRef={wandTipPosRef}
+                    isTriggerHeld={isTriggerHeld}
+                    brushRadius={brushRadius}
+                    tool={sculptTool}
+                    strokes={strokes}
+                    onAddCompletedStroke={handleAddCompletedStroke}
+                    onEraseAtTip={handleEraseAtTip}
+                    triggerHaptic={triggerHaptic}
+                  />
+                )}
 
-            {activeMode === 'TEXTURE_LAB' && (
-              <TextureLabMode
-                wandTipPosRef={wandTipPosRef}
-                sendSerial={sendCommand}
-                triggerHaptic={triggerHaptic}
-              />
-            )}
+                {activeMode === 'TEXTURE_LAB' && (
+                  <TextureLabMode
+                    wandTipPosRef={wandTipPosRef}
+                    sendSerial={sendCommand}
+                    triggerHaptic={triggerHaptic}
+                  />
+                )}
 
-            {activeMode === 'CAD_SLICER' && (
-              <CADSlicerMode
-                wandRotRef={wandRotRef}
-                wandTipPosRef={wandTipPosRef}
-                isTriggerPressed={isTriggerHeld}
-                triggerHaptic={triggerHaptic}
-              />
-            )}
+                {activeMode === 'CAD_SLICER' && (
+                  <CADSlicerMode
+                    wandRotRef={wandRotRef}
+                    wandTipPosRef={wandTipPosRef}
+                    isTriggerPressed={isTriggerHeld}
+                    triggerHaptic={triggerHaptic}
+                  />
+                )}
 
-            {activeMode === 'PHYSICS' && (
-              <PhysicsSandboxMode
-                wandTipPosRef={wandTipPosRef}
-                objects={physicsObjects}
-                triggerHaptic={triggerHaptic}
-              />
+                {activeMode === 'PHYSICS' && (
+                  <PhysicsSandboxMode
+                    wandTipPosRef={wandTipPosRef}
+                    objects={physicsObjects}
+                    triggerHaptic={triggerHaptic}
+                  />
+                )}
+              </>
             )}
           </React.Suspense>
 
@@ -505,8 +558,17 @@ export default function App() {
           />
         </Canvas>
 
+        {/* Start Screen Overlay when not started */}
+        {!isStarted && (
+          <StartScreen
+            onStart={handleStartWorkspace}
+            connected={connected}
+            trackerActive={trackerActive}
+          />
+        )}
+
         {/* Live Picture-in-Picture Webcam Monitor (Bottom Right) */}
-        {trackerActive && (
+        {isStarted && trackerActive && (
           <div className="z-20 absolute bottom-24 right-6 w-44 glass-panel rounded-lg p-2 shadow-2xl flex flex-col gap-1 border border-slate-700/70">
             <div className="flex items-center justify-between text-[10px] font-mono text-slate-300">
               <span className="flex items-center gap-1">
@@ -525,21 +587,23 @@ export default function App() {
         )}
 
         {/* Floating Event Log Drawer */}
-        <EventLog logs={logs} />
+        {isStarted && <EventLog logs={logs} />}
 
         {/* Bottom Glassmorphic Telemetry HUD */}
-        <BottomHUD
-          telemetry={{
-            ...telemetry,
-            btn: isTriggerHeld ? 1 : 0,
-          }}
-          brushRadius={brushRadius}
-          activeMode={activeMode}
-          sculptTool={sculptTool}
-          trackingSource={trackingSource}
-          onToggleTool={() => setSculptTool((prev) => (prev === 'DRAW' ? 'ERASE' : 'DRAW'))}
-          onSpawn={handleSpawn}
-        />
+        {isStarted && (
+          <BottomHUD
+            telemetry={{
+              ...telemetry,
+              btn: isTriggerHeld ? 1 : 0,
+            }}
+            brushRadius={brushRadius}
+            activeMode={activeMode}
+            sculptTool={sculptTool}
+            trackingSource={trackingSource}
+            onToggleTool={() => setSculptTool((prev) => (prev === 'DRAW' ? 'ERASE' : 'DRAW'))}
+            onSpawn={handleSpawn}
+          />
+        )}
       </div>
     </div>
   );
