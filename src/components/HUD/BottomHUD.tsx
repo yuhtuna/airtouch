@@ -1,11 +1,12 @@
 import React from 'react';
-import { WandTelemetry, DemoMode, SculptTool, TrackingSource } from '../../types/telemetry';
+import { WandTelemetry, DemoMode, SculptTool, SculptTarget, TrackingSource } from '../../types/telemetry';
 
 interface BottomHUDProps {
   telemetry: WandTelemetry;
   brushRadius: number;
   activeMode: DemoMode;
   sculptTool: SculptTool;
+  sculptTarget?: SculptTarget;
   trackingSource: TrackingSource;
   onToggleTool: () => void;
   onSpawn?: (shape: 'cube' | 'sphere' | 'cylinder' | 'gear') => void;
@@ -16,6 +17,7 @@ export const BottomHUD: React.FC<BottomHUDProps> = ({
   brushRadius,
   activeMode,
   sculptTool,
+  sculptTarget = 'CLAY',
   trackingSource,
 }) => {
   return (
@@ -82,7 +84,10 @@ export const BottomHUD: React.FC<BottomHUDProps> = ({
         <div>
           {activeMode === 'SCULPT' && (
             <div className="text-sm font-extrabold text-sky-400 flex items-center justify-center gap-2">
-              <span>MODE 1: 3D SCULPTING — FREEHAND AIR-DRAWING</span>
+              <span>
+                MODE 1: 3D SCULPTING —{' '}
+                {sculptTarget === 'CLAY' ? 'BLENDER DIGITAL CLAY BALL' : 'FREEHAND AIR-DRAW'}
+              </span>
             </div>
           )}
           {activeMode === 'TEXTURE_LAB' && (
@@ -104,10 +109,19 @@ export const BottomHUD: React.FC<BottomHUDProps> = ({
 
         {/* Clear Action Instruction */}
         <div className="text-xs md:text-sm font-medium text-slate-200 leading-snug">
-          {activeMode === 'SCULPT' && (
+          {activeMode === 'SCULPT' && sculptTarget === 'CLAY' && (
             <span>
-              Hold <b className="text-rose-400 font-bold">Wand Trigger</b> (or click canvas) to{' '}
-              <b className="text-sky-300 font-bold">{sculptTool === 'DRAW' ? 'extrude 3D tube' : 'erase strokes'}</b>. Twist wrist to scale brush size.
+              Hold <b className="text-rose-400 font-bold">Wand Trigger</b> (or left click) to{' '}
+              <b className="text-sky-300 font-bold">
+                {sculptTool === 'DRAW' ? 'extrude / inflate clay' : sculptTool === 'ERASE' ? 'carve / depress clay' : 'smooth surface'}
+              </b>
+              . Twist wand barrel to adjust brush radius.
+            </span>
+          )}
+          {activeMode === 'SCULPT' && sculptTarget === 'AIR' && (
+            <span>
+              Hold <b className="text-rose-400 font-bold">Wand Trigger</b> (or left click) to{' '}
+              <b className="text-sky-300 font-bold">{sculptTool === 'DRAW' ? 'extrude 3D tube' : 'erase strokes'}</b>. Twist wand barrel to scale stroke radius.
             </span>
           )}
           {activeMode === 'TEXTURE_LAB' && (

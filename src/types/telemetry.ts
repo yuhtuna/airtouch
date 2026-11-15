@@ -11,7 +11,9 @@ export interface WandTelemetry {
 
 export type DemoMode = 'SCULPT' | 'TEXTURE_LAB' | 'CAD_SLICER' | 'PHYSICS';
 
-export type SculptTool = 'DRAW' | 'ERASE';
+export type SculptTool = 'DRAW' | 'ERASE' | 'SMOOTH';
+
+export type SculptTarget = 'CLAY' | 'AIR';
 
 export type TrackingSource = 'WEBCAM' | 'COASTING' | 'IMU_RAYCASTER' | 'SIMULATION';
 

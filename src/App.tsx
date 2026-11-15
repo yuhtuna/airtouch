@@ -4,7 +4,7 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { STLExporter } from 'three/examples/jsm/exporters/STLExporter.js';
 
-import { WandTelemetry, DemoMode, Stroke, StrokePoint, SculptTool, TrackingSource } from './types/telemetry';
+import { WandTelemetry, DemoMode, Stroke, StrokePoint, SculptTool, SculptTarget, TrackingSource } from './types/telemetry';
 import { useSerial } from './hooks/useSerial';
 import { useWebcamTracker } from './hooks/useWebcamTracker';
 import { Wand3D } from './components/Wand3D';
@@ -27,6 +27,9 @@ export default function App() {
   const [isStarted, setIsStarted] = useState(false);
   const [activeMode, setActiveMode] = useState<DemoMode>('SCULPT');
   const [sculptTool, setSculptTool] = useState<SculptTool>('DRAW');
+  const [sculptTarget, setSculptTarget] = useState<SculptTarget>('CLAY');
+  const [clayResetTrigger, setClayResetTrigger] = useState(0);
+  const [clayWireframe, setClayWireframe] = useState(false);
   const [manualTriggerHeld, setManualTriggerHeld] = useState(false);
   const [logs, setLogs] = useState<string[]>([
     'AirTouch Spatial Studio active.',
@@ -174,27 +177,9 @@ export default function App() {
         handleUndoRef.current();
       }
 
-      // 7. Button Interactions:
-      // Double Click -> Cycle Next Demo Mode
-      if (data.clickEvent === 2) {
-        cycleModeRef.current();
-      }
-
-      // Long Press (>1000ms) -> Recenter
-      const btnNow = data.btn === 1;
-      const wasPressed = lastBtnStateRef.current;
-      lastBtnStateRef.current = btnNow;
-
-      if (btnNow && !wasPressed) {
-        btnPressStartRef.current = performance.now();
-        hasLongPressedRef.current = false;
-      } else if (btnNow && wasPressed) {
-        if (!hasLongPressedRef.current && (performance.now() - btnPressStartRef.current) > 1000) {
-          hasLongPressedRef.current = true;
-          handleRecenterRef.current();
-          addLog('Button Long Press (>1s): Wand recentered.');
-        }
-      }
+      // 7. Physical Button is PURE INTERACT TRIGGER:
+      // Pressing/holding it triggers sculpt / carve / erase with zero interruption.
+      // Mode changes and Recenter are controlled from UI / keyboard to prevent accidental interruptions.
     },
     onLog: addLog,
   });
@@ -271,6 +256,42 @@ export default function App() {
     handleRecenterRef.current = handleRecenter;
     handleUndoRef.current = handleUndo;
   }, [cycleMode, handleRecenter, handleUndo]);
+
+  // Global Keyboard Shortcuts for Pro Workflow
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).tagName === 'INPUT') return;
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        handleRecenter();
+      } else if (e.key === '1') {
+        setActiveMode('SCULPT');
+      } else if (e.key === '2') {
+        setActiveMode('TEXTURE_LAB');
+      } else if (e.key === '3') {
+        setActiveMode('CAD_SLICER');
+      } else if (e.key === '4') {
+        setActiveMode('PHYSICS');
+      } else if (e.key.toLowerCase() === 'd') {
+        setSculptTool('DRAW');
+      } else if (e.key.toLowerCase() === 'e') {
+        setSculptTool('ERASE');
+      } else if (e.key.toLowerCase() === 's') {
+        setSculptTool('SMOOTH');
+      } else if (e.key.toLowerCase() === 'c') {
+        setSculptTarget((prev) => (prev === 'CLAY' ? 'AIR' : 'CLAY'));
+      } else if (e.key.toLowerCase() === 'r') {
+        setClayResetTrigger((prev) => prev + 1);
+        addLog('Clay sphere reset to smooth base.');
+      } else if (e.key.toLowerCase() === 'w') {
+        setClayWireframe((prev) => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleRecenter, addLog]);
 
   // Clear Canvas
   const handleClear = useCallback(() => {
@@ -638,7 +659,17 @@ export default function App() {
           onResetAll={handleResetAll}
           onExitToMenu={handleExitToMenu}
           sculptTool={sculptTool}
-          onToggleTool={() => setSculptTool((prev) => (prev === 'DRAW' ? 'ERASE' : 'DRAW'))}
+          onSelectTool={setSculptTool}
+          sculptTarget={sculptTarget}
+          onToggleTarget={() => setSculptTarget((prev) => (prev === 'CLAY' ? 'AIR' : 'CLAY'))}
+          onResetClay={() => {
+            setClayResetTrigger((prev) => prev + 1);
+            triggerHaptic(160, 40);
+            audioHaptics.playCollisionThud(0.8);
+            addLog('Clay sphere reset to smooth base.');
+          }}
+          wireframe={clayWireframe}
+          onToggleWireframe={() => setClayWireframe((prev) => !prev)}
           onSpawnPhysics={handleSpawn}
           onConnect={connect}
         />
@@ -692,10 +723,13 @@ export default function App() {
                     isTriggerHeld={isTriggerHeld}
                     brushRadius={brushRadius}
                     tool={sculptTool}
+                    sculptTarget={sculptTarget}
                     strokes={strokes}
                     onAddCompletedStroke={handleAddCompletedStroke}
                     onEraseAtTip={handleEraseAtTip}
                     triggerHaptic={triggerHaptic}
+                    clayResetTrigger={clayResetTrigger}
+                    wireframe={clayWireframe}
                   />
                 )}
 
@@ -727,12 +761,15 @@ export default function App() {
             )}
           </React.Suspense>
 
-          {/* Smooth OrbitControls for Camera Navigation */}
+          {/* Smooth OrbitControls for Camera Navigation around Central Object */}
           <OrbitControls
             makeDefault
             enableDamping
             dampingFactor={0.05}
-            maxPolarAngle={Math.PI / 2 + 0.1}
+            target={[0, 0, 0]}
+            minDistance={2.5}
+            maxDistance={16}
+            maxPolarAngle={Math.PI / 2 + 0.15}
           />
         </Canvas>
 
@@ -777,6 +814,7 @@ export default function App() {
             brushRadius={brushRadius}
             activeMode={activeMode}
             sculptTool={sculptTool}
+            sculptTarget={sculptTarget}
             trackingSource={trackingSource}
             onToggleTool={() => setSculptTool((prev) => (prev === 'DRAW' ? 'ERASE' : 'DRAW'))}
             onSpawn={handleSpawn}
