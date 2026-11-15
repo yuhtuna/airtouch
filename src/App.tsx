@@ -21,6 +21,7 @@ import { CADSlicerMode } from './modes/CADSlicerMode';
 import { PhysicsSandboxMode, PhysicsObject } from './modes/PhysicsSandboxMode';
 import { HAPTIC_PATTERNS } from './lib/hapticPatterns';
 import { audioHaptics } from './lib/audioHaptics';
+import { DepthSensorFusion } from './lib/sensorFusion';
 
 export default function App() {
   const [isStarted, setIsStarted] = useState(false);
@@ -41,6 +42,7 @@ export default function App() {
   const trackerActiveRef = useRef(false);
   const depthNudgeRef = useRef(0);
   const recalibrateDepthRef = useRef<() => void>(() => {});
+  const depthFusionRef = useRef(new DepthSensorFusion());
 
   // Telemetry HUD state
   const [telemetry, setTelemetry] = useState<WandTelemetry>({
@@ -87,6 +89,16 @@ export default function App() {
 
       // 1. Update orientation [pitch, yaw, roll]
       wandRotRef.current = [data.pitch, data.yaw, data.roll];
+
+      // Update Depth Sensor Fusion with 100 Hz IMU dynamic linear acceleration
+      depthFusionRef.current.updateIMU(
+        data.ax,
+        data.ay,
+        data.az,
+        data.pitch,
+        data.yaw,
+        data.roll
+      );
 
       // 2. Fallback to IMU raycaster position ONLY when optical camera is NOT tracking
       const isOpticalTracking = trackerActiveRef.current && opticalConfidenceRef.current > 10;
@@ -170,6 +182,7 @@ export default function App() {
   const handleRecenter = useCallback(() => {
     depthNudgeRef.current = 0;
     recalibrateDepthRef.current();
+    depthFusionRef.current.reset(0);
     wandPosRef.current = [0, 0, 0];
     sendCommand('Z\n', true);
     triggerHaptic(160, 40);
@@ -243,13 +256,16 @@ export default function App() {
     recalibrateNeutralDepth,
   } = useWebcamTracker({
     onPositionUpdate: (pos) => {
+      // Sensor Fusion: Fuse optical depth anchor with IMU dynamic thrust
+      const fusedZ = depthFusionRef.current.updateOptical(pos[2]);
+
       const adjustedPos: [number, number, number] = [
         pos[0],
         pos[1],
-        pos[2] + depthNudgeRef.current,
+        fusedZ + depthNudgeRef.current,
       ];
       lastOpticalPosRef.current = adjustedPos;
-      // Optical camera directly drives 3D position (X, Y, Z) in real time
+      // Optical + IMU Sensor Fusion drives 3D position in real time
       wandPosRef.current = adjustedPos;
 
       const targetEuler = new THREE.Euler(
@@ -285,6 +301,7 @@ export default function App() {
     ]);
     wandPosRef.current = [0, 0, 0];
     wandRotRef.current = [0, 0, 0];
+    depthFusionRef.current.reset(0);
     sendCommand('Z\n', true);
     triggerHaptic(200, 100);
     audioHaptics.playCollisionThud(1.0);
