@@ -10,6 +10,14 @@ interface UseSerialProps {
 }
 
 export function useSerial({ onTelemetry, onLog }: UseSerialProps) {
+  const onTelemetryRef = useRef(onTelemetry);
+  const onLogRef = useRef(onLog);
+
+  useEffect(() => {
+    onTelemetryRef.current = onTelemetry;
+    onLogRef.current = onLog;
+  });
+
   const [status, setStatus] = useState<ConnectionStatus>('DISCONNECTED');
   const isTransitioningRef = useRef(false);
   const portRef = useRef<any>(null);
@@ -153,7 +161,7 @@ export function useSerial({ onTelemetry, onLog }: UseSerialProps) {
             for (const line of lines) {
               const telemetry = parseTelemetryLine(line);
               if (telemetry) {
-                onTelemetry(telemetry);
+                onTelemetryRef.current(telemetry);
               }
             }
           }

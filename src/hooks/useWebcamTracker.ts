@@ -97,22 +97,21 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
           let sumY = 0;
           let count = 0;
 
-          // Stride of 4 pixels (16 bytes) for 60 FPS performance
-          for (let i = 0; i < data.length; i += 16) {
+          // Stride of 2 pixels (8 bytes) for high-precision 60 FPS performance
+          for (let i = 0; i < data.length; i += 8) {
             const r = data[i];
             const g = data[i + 1];
             const b = data[i + 2];
 
-            // STRICT BLUE-ONLY OPTICAL FILTER:
-            // Blue channel must strictly dominate over both red and green.
-            // 1. Minimum blue threshold: b > 110
-            // 2. Strong chromatic separation from red: (b - r) > 30
-            // 3. Clear dominance over green: (b - g) > 15
-            // 4. Overexposed blue LED cores: b > 190 and (b - r) > 30 and b >= g
-            const isStrictBlue = (b > 110 && (b - r) > 30 && (b - g) > 15);
-            const isBrightBlueEmitter = (b > 190 && (b - r) > 30 && b >= g);
+            // Robust Multi-Threshold Blue LED Emitter Filter:
+            // 1. Classical blue emission (fringe and diffused light):
+            const isBlueDominant = (b > 85 && b > r * 1.25 + 10 && b > g * 1.1 + 8);
+            // 2. High-intensity blue emitter core:
+            const isBrightBlue = (b > 150 && (b - r) > 15 && (b - g) > 8);
+            // 3. Overexposed LED Center (Lens bloom where Blue is highest channel):
+            const isOverexposedEmitter = (b >= 200 && b >= r && b >= g && (b > r + 3 || b > g + 3));
 
-            if (isStrictBlue || isBrightBlueEmitter) {
+            if (isBlueDominant || isBrightBlue || isOverexposedEmitter) {
               const pixelIndex = i / 4;
               const px = pixelIndex % canvas.width;
               const py = Math.floor(pixelIndex / canvas.width);
@@ -125,8 +124,8 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
           let blobX = 0;
           let blobY = 0;
           let mirroredX = 0;
-          // High sensitivity threshold for blue LED: locks on at 4+ pixels
-          const detected = count >= 4;
+          // High sensitivity threshold: locks on at 6+ sampled pixels
+          const detected = count >= 6;
 
           if (detected) {
             blobX = sumX / count;
@@ -137,12 +136,13 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
             const rawX = (mirroredX - canvas.width / 2) / 45.0; // Stage X mapping
             const rawY = -(blobY - canvas.height / 2) / 45.0; // Stage Y mapping
 
-            // Enhanced 3D Depth Z Mapping:
-            // Baseline LED radius ~1.6 at normal arm's length -> Z = 0 (World Origin)
-            // Bringing LED closer (radius up to 3.5+) -> moves forward towards viewer (+2.8m)
-            // Extending LED away (radius down to 1.1) -> moves deep into screen (-3.2m)
-            const apparentRadius = Math.sqrt(count / Math.PI);
-            const rawZ = Math.max(-3.2, Math.min(2.8, (apparentRadius - 1.6) * 2.2));
+            // Robust 3D Depth Z Mapping:
+            // Since apparent area scales with 1/distance^2, apparent radius = sqrt(count * 2 / PI)
+            // Far (~1 meter): count ~ 12 -> radius ~ 2.7 -> rawZ ~ -1.6m
+            // Arm-length (~60cm): count ~ 45 -> radius ~ 5.3 -> rawZ ~ 0.0m (World Origin)
+            // Close (~25cm): count ~ 140 -> radius ~ 9.4 -> rawZ ~ +2.8m
+            const apparentRadius = Math.sqrt((count * 2.0) / Math.PI);
+            const rawZ = Math.max(-3.5, Math.min(3.0, (apparentRadius - 5.0) * 0.7));
 
             // Smooth using 1-Euro Filter with zero perceived latency
             const [smoothX, smoothY, smoothZ] = filterRef.current.filter(
@@ -153,7 +153,7 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
             );
 
             onPositionUpdate([smoothX, smoothY, smoothZ]);
-            setTrackingConfidence(Math.min(100, 20 + count * 4));
+            setTrackingConfidence(Math.min(100, Math.round(count * 1.5)));
           } else {
             setTrackingConfidence(0);
           }
