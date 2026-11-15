@@ -15,6 +15,17 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
   const animIdRef = useRef<number | null>(null);
   const filterRef = useRef(new OneEuroFilter3D(1.2, 0.02, 1.0));
 
+  // Auto-calibrated neutral depth baseline for 5mm Blue LED
+  const neutralSqrtCountRef = useRef(3.5);
+  const currentCountRef = useRef(0);
+
+  const recalibrateNeutralDepth = useCallback(() => {
+    if (currentCountRef.current >= 4) {
+      neutralSqrtCountRef.current = Math.sqrt(currentCountRef.current);
+      onLog(`Camera Depth Calibrated: Neutral Z set at ${currentCountRef.current}px.`);
+    }
+  }, [onLog]);
+
   const stopTracker = useCallback(() => {
     if (animIdRef.current) {
       cancelAnimationFrame(animIdRef.current);
@@ -126,6 +137,7 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
           let mirroredX = 0;
           // High sensitivity threshold: locks on at 6+ sampled pixels
           const detected = count >= 6;
+          currentCountRef.current = count;
 
           if (detected) {
             blobX = sumX / count;
@@ -136,13 +148,13 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
             const rawX = (mirroredX - canvas.width / 2) / 45.0; // Stage X mapping
             const rawY = -(blobY - canvas.height / 2) / 45.0; // Stage Y mapping
 
-            // Robust 3D Depth Z Mapping:
-            // Since apparent area scales with 1/distance^2, apparent radius = sqrt(count * 2 / PI)
-            // Far (~1 meter): count ~ 12 -> radius ~ 2.7 -> rawZ ~ -1.6m
-            // Arm-length (~60cm): count ~ 45 -> radius ~ 5.3 -> rawZ ~ 0.0m (World Origin)
-            // Close (~25cm): count ~ 140 -> radius ~ 9.4 -> rawZ ~ +2.8m
-            const apparentRadius = Math.sqrt((count * 2.0) / Math.PI);
-            const rawZ = Math.max(-3.5, Math.min(3.0, (apparentRadius - 5.0) * 0.7));
+            // Auto-Calibrated Optical 3D Depth (Z):
+            // sqrt(count) represents linear apparent diameter of LED.
+            // Moving closer expands count -> rawZ moves forward towards user (+Z).
+            // Moving away shrinks count -> rawZ moves deep into screen (-Z).
+            const currentSqrt = Math.sqrt(count);
+            const deltaSqrt = currentSqrt - neutralSqrtCountRef.current;
+            const rawZ = Math.max(-3.5, Math.min(3.0, deltaSqrt * 1.6));
 
             // Smooth using 1-Euro Filter with zero perceived latency
             const [smoothX, smoothY, smoothZ] = filterRef.current.filter(
@@ -153,7 +165,7 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
             );
 
             onPositionUpdate([smoothX, smoothY, smoothZ]);
-            setTrackingConfidence(Math.min(100, Math.round(count * 1.5)));
+            setTrackingConfidence(Math.min(100, Math.round(count * 2.5)));
           } else {
             setTrackingConfidence(0);
           }
@@ -192,10 +204,30 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
                 mCtx.lineTo(targetX, targetY + visualRadius + 6);
                 mCtx.stroke();
 
-                // Live status text badge showing blue pixel count
+                // Live Vertical Depth Gauge Bar on Right Edge
+                const barWidth = 7;
+                const barHeight = monitor.height - 24;
+                const barX = monitor.width - barWidth - 4;
+                const barY = 8;
+
+                mCtx.fillStyle = 'rgba(15, 23, 42, 0.7)';
+                mCtx.fillRect(barX, barY, barWidth, barHeight);
+                mCtx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
+                mCtx.strokeRect(barX, barY, barWidth, barHeight);
+
+                // Indicator needle (center is 0m, top is +2.5m, bottom is -3.0m)
+                const normalizedZ = (smoothZ + 3.0) / 5.5; // 0 to 1
+                const clampedNormZ = Math.max(0, Math.min(1, normalizedZ));
+                const needleY = barY + barHeight * (1 - clampedNormZ);
+
+                mCtx.fillStyle = '#38bdf8';
+                mCtx.fillRect(barX - 2, needleY - 2, barWidth + 4, 4);
+
+                // Live status text badge showing pixel count AND live depth
                 mCtx.fillStyle = '#38bdf8';
                 mCtx.font = 'bold 9px monospace';
-                mCtx.fillText(`BLUE LOCK: ${count}px`, 6, monitor.height - 6);
+                const zSign = smoothZ >= 0 ? '+' : '';
+                mCtx.fillText(`LOCK: ${count}px | Z: ${zSign}${smoothZ.toFixed(2)}m`, 6, monitor.height - 6);
               } else {
                 mCtx.fillStyle = '#f59e0b';
                 mCtx.font = 'bold 9px monospace';
@@ -227,5 +259,5 @@ export function useWebcamTracker({ onPositionUpdate, onLog }: UseWebcamTrackerPr
     };
   }, [stopTracker]);
 
-  return { active, trackingConfidence, monitorCanvasRef, startTracker, stopTracker };
+  return { active, trackingConfidence, monitorCanvasRef, startTracker, stopTracker, recalibrateNeutralDepth };
 }

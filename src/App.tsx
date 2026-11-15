@@ -39,6 +39,8 @@ export default function App() {
   const lastOpticalPosRef = useRef<[number, number, number] | null>(null);
   const opticalConfidenceRef = useRef(0);
   const trackerActiveRef = useRef(false);
+  const depthNudgeRef = useRef(0);
+  const recalibrateDepthRef = useRef<() => void>(() => {});
 
   // Telemetry HUD state
   const [telemetry, setTelemetry] = useState<WandTelemetry>({
@@ -166,11 +168,13 @@ export default function App() {
 
   // Recenter wand IMU and position
   const handleRecenter = useCallback(() => {
+    depthNudgeRef.current = 0;
+    recalibrateDepthRef.current();
     wandPosRef.current = [0, 0, 0];
     sendCommand('Z\n', true);
     triggerHaptic(160, 40);
     audioHaptics.playCollisionThud(0.8);
-    addLog('Wand calibrated & recentered (Z).');
+    addLog('Wand calibrated, neutral depth set & recentered (Z).');
   }, [sendCommand, triggerHaptic, addLog]);
 
   // Mode cycling callback
@@ -236,11 +240,17 @@ export default function App() {
     monitorCanvasRef,
     startTracker,
     stopTracker,
+    recalibrateNeutralDepth,
   } = useWebcamTracker({
     onPositionUpdate: (pos) => {
-      lastOpticalPosRef.current = pos;
+      const adjustedPos: [number, number, number] = [
+        pos[0],
+        pos[1],
+        pos[2] + depthNudgeRef.current,
+      ];
+      lastOpticalPosRef.current = adjustedPos;
       // Optical camera directly drives 3D position (X, Y, Z) in real time
-      wandPosRef.current = pos;
+      wandPosRef.current = adjustedPos;
 
       const targetEuler = new THREE.Euler(
         (wandRotRef.current[0] * Math.PI) / 180,
@@ -250,9 +260,9 @@ export default function App() {
       );
       const tipOffset = new THREE.Vector3(0, 0, 0.68).applyEuler(targetEuler);
       wandTipPosRef.current.set(
-        pos[0] + tipOffset.x,
-        pos[1] + tipOffset.y,
-        pos[2] + tipOffset.z
+        adjustedPos[0] + tipOffset.x,
+        adjustedPos[1] + tipOffset.y,
+        adjustedPos[2] + tipOffset.z
       );
     },
     onLog: addLog,
@@ -260,9 +270,10 @@ export default function App() {
 
   // Keep optical tracking refs synced for zero-latency frame access
   useEffect(() => {
+    recalibrateDepthRef.current = recalibrateNeutralDepth;
     trackerActiveRef.current = trackerActive;
     opticalConfidenceRef.current = trackingConfidence;
-  }, [trackerActive, trackingConfidence]);
+  }, [recalibrateNeutralDepth, trackerActive, trackingConfidence]);
 
   // Full Reset: World (strokes, physics) AND MCU (calibration, haptics)
   const handleResetAll = useCallback(() => {
@@ -358,6 +369,14 @@ export default function App() {
         addLog('Mode: PHYSICS ARENA');
       } else if (e.code === 'KeyC') {
         handleClear();
+      } else if (e.code === 'KeyW' || e.code === 'ArrowUp') {
+        depthNudgeRef.current += 0.25;
+        const total = depthNudgeRef.current >= 0 ? `+${depthNudgeRef.current.toFixed(2)}` : depthNudgeRef.current.toFixed(2);
+        addLog(`Depth: Pushed Forward (+0.25m, Nudge: ${total}m)`);
+      } else if (e.code === 'KeyS' || e.code === 'ArrowDown') {
+        depthNudgeRef.current -= 0.25;
+        const total = depthNudgeRef.current >= 0 ? `+${depthNudgeRef.current.toFixed(2)}` : depthNudgeRef.current.toFixed(2);
+        addLog(`Depth: Pulled Backward (-0.25m, Nudge: ${total}m)`);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -449,6 +468,10 @@ export default function App() {
         }
       }}
       onMouseUp={() => setManualTriggerHeld(false)}
+      onWheel={(e) => {
+        // Smooth mouse wheel depth zoom
+        depthNudgeRef.current += e.deltaY * -0.002;
+      }}
     >
       {/* Top Glassmorphic Navigation Bar (Shown when in workspace) */}
       {isStarted && (

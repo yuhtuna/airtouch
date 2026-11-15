@@ -125,9 +125,11 @@ export const BottomHUD: React.FC<BottomHUDProps> = ({
 
         {/* Persistent Keyboard & Wand Hardware Controls */}
         <div className="text-xs text-slate-400 font-mono flex items-center gap-2.5 border-t border-slate-800 pt-1.5 w-full justify-center">
-          <span><b className="text-sky-300 font-bold">Double-Click Wand Button</b> or <b className="text-sky-300 font-bold">Tab / 1-4</b>: Switch Mode</span>
+          <span><b className="text-sky-300 font-bold">Double-Click Button</b> / <b className="text-sky-300 font-bold">Tab / 1-4</b>: Mode</span>
           <span className="text-slate-600">•</span>
-          <span><b className="text-sky-300 font-bold">Long-Press (&gt;1s)</b> or <b className="text-sky-300 font-bold">Space</b>: Recenter</span>
+          <span><b className="text-sky-300 font-bold">Long-Press (&gt;1s)</b> / <b className="text-sky-300 font-bold">Space</b>: Recenter</span>
+          <span className="text-slate-600">•</span>
+          <span><b className="text-sky-300 font-bold">W / S or Wheel</b>: Depth (Z)</span>
         </div>
       </div>
 
